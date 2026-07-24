@@ -1,0 +1,8 @@
+node_modules/
+web/node_modules/
+web/dist/
+web/src/wedding-list.jsx
+.DS_Store
+*.log
+.env
+.env.*
