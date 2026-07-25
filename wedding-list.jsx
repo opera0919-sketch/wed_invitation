@@ -81,15 +81,15 @@ const settingsFromRow = (r) => ({
 /* ================= 스타일 ================= */
 const CSS = `
 :root{
-  --paper:#F7F4EE; --card:#FFF; --ink:#22201E; --mute:#8A8078;
-  --line:#E5DED3; --bride:#9B4F63; --groom:#3D5A80; --both:#B08B3F;
+  --paper:#FCF8F3; --card:#FFF; --ink:#3A322E; --mute:#A0958C;
+  --line:#EFE7DB; --bride:#E07A93; --groom:#5C86CE; --both:#D4A24C;
   --safe-b:env(safe-area-inset-bottom,0px);
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 .wl{background:var(--paper);color:var(--ink);min-height:100vh;
-  font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;
-  font-size:16px;line-height:1.5;-webkit-text-size-adjust:100%}
-.wl .serif{font-family:"Nanum Myeongjo",Georgia,serif}
+  font-family:"Pretendard Variable",Pretendard,-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;
+  font-size:16px;line-height:1.55;-webkit-text-size-adjust:100%}
+.wl .serif{font-family:"Jua","Pretendard Variable",Pretendard,-apple-system,sans-serif;letter-spacing:.01em}
 .wl button,.wl input,.wl select,.wl textarea{font-family:inherit;font-size:16px}
 .wl button{border:0;background:none;color:inherit;cursor:pointer}
 .wl input,.wl select,.wl textarea{
@@ -174,6 +174,34 @@ const CSS = `
 .wl .emoji-grid{display:grid;grid-template-columns:repeat(8,1fr);gap:6px;margin-top:8px}
 .wl .emoji-btn{width:100%;aspect-ratio:1;border:1px solid var(--line);border-radius:10px;font-size:19px;display:flex;align-items:center;justify-content:center}
 .wl .emoji-btn.on{border-color:var(--ink);background:var(--paper)}
+/* 캐주얼 라운드 */
+.wl .card{border-radius:22px}
+.wl .btn{border-radius:18px}
+.wl .row{border-radius:18px}
+.wl h1{font-weight:400}
+/* 툴바 (선택/연락처) */
+.wl .toolrow{display:flex;gap:8px;margin-bottom:12px}
+.wl .toolbtn{flex:1;display:flex;align-items:center;justify-content:center;gap:6px;padding:11px 0;border:1px solid var(--line);border-radius:14px;background:var(--card);font-size:13.5px;color:var(--ink)}
+.wl .toolbtn.on{background:var(--ink);border-color:var(--ink);color:#fff}
+.wl .toolbtn:active{opacity:.85}
+/* 선택 체크박스 */
+.wl .selbox{flex:0 0 auto;width:26px;height:26px;border-radius:99px;border:2px solid var(--line);display:flex;align-items:center;justify-content:center}
+.wl .selbox.on{background:var(--ink);border-color:var(--ink);color:#fff}
+/* 하단 일괄 작업 바 */
+.wl .bulkbar{position:fixed;left:0;right:0;bottom:calc(58px + var(--safe-b));z-index:30;background:var(--card);border-top:1px solid var(--line);padding:10px 14px calc(10px);box-shadow:0 -6px 18px rgba(58,50,46,.08)}
+.wl .bulkbar .cnt{font-size:13px;color:var(--mute);margin-bottom:8px;display:flex;justify-content:space-between;align-items:center}
+.wl .bulkbar .acts{display:flex;gap:7px;overflow-x:auto;scrollbar-width:none}
+.wl .bulkbar .acts::-webkit-scrollbar{display:none}
+.wl .bulkbar .acts button{flex:0 0 auto;padding:10px 14px;border:1px solid var(--line);border-radius:12px;background:var(--paper);font-size:13.5px;white-space:nowrap}
+.wl .bulkbar .acts button.danger{color:var(--bride);border-color:var(--bride)}
+/* 하단 알림 배너 */
+.wl .banner{position:fixed;left:12px;right:12px;bottom:calc(70px + var(--safe-b));z-index:29;background:var(--ink);color:#fff;border-radius:16px;padding:13px 14px;display:flex;align-items:center;gap:10px;box-shadow:0 8px 24px rgba(58,50,46,.25);animation:wlup .2s ease-out}
+.wl .banner .bt{flex:1;font-size:13.5px;line-height:1.45}
+.wl .banner .go{flex:0 0 auto;background:#fff;color:var(--ink);border-radius:10px;padding:8px 12px;font-size:13px;font-weight:700}
+.wl .banner .cl{flex:0 0 auto;color:rgba(255,255,255,.7);padding:4px}
+/* 연락처/그룹 칩 */
+.wl .grpchip{flex:0 0 auto;padding:8px 13px;border-radius:99px;border:1px dashed var(--line);color:var(--mute);font-size:13px;white-space:nowrap}
+.wl .grpchip.on{border-style:solid;background:var(--ink);border-color:var(--ink);color:#fff}
 @media(prefers-reduced-motion:reduce){.wl *{animation:none!important;transition:none!important}}
 `;
 
@@ -201,6 +229,24 @@ function Seg({ opts, cur, onPick, colored }) {
       })}
     </div>
   );
+}
+
+/* =============================================================================
+ *  로컬 상태 입력 — 한글 IME 안전 (편집 중엔 로컬, blur 때 커밋)
+ *  controlled value 를 매 키 입력마다 원격 저장/echo 로 되돌리면 한글 조합이
+ *  깨지므로, 편집 중에는 로컬 상태만 쓰고 focus 가 아닐 때만 원격값과 동기화한다.
+ * ========================================================================== */
+function LocalText({ value, onCommit, textarea, ...rest }) {
+  const [v, setV] = useState(value || "");
+  const focused = React.useRef(false);
+  useEffect(() => { if (!focused.current) setV(value || ""); }, [value]);
+  const common = {
+    value: v,
+    onChange: (e) => setV(e.target.value),
+    onFocus: () => { focused.current = true; },
+    onBlur: () => { focused.current = false; if (v !== (value || "")) onCommit(v); },
+  };
+  return textarea ? <textarea {...rest} {...common} /> : <input {...rest} {...common} />;
 }
 
 /* =============================================================================
@@ -315,6 +361,10 @@ export default function WeddingList() {
   const [wipeAsk, setWipeAsk] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
   const [needProfile, setNeedProfile] = useState(false);
+  const [selectMode, setSelectMode] = useState(false);
+  const [selected, setSelected] = useState([]);        // 일괄 편집 선택된 하객 id
+  const [contactImport, setContactImport] = useState(null); // 연락처에서 가져온 [{name,tel}]
+  const [expenseDismiss, setExpenseDismiss] = useState(false); // 지출 미입력 배너 닫음
 
   const email = session?.user?.email || "";
   const uidMe = session?.user?.id || null;
@@ -511,6 +561,60 @@ export default function WeddingList() {
   };
   const signOut = async () => { await supabase.auth.signOut(); setAccountOpen(false); setGuests([]); setMeetings([]); setUsers([]); setManagers([]); toast("로그아웃했어요"); };
 
+  /* ── 일괄 편집 ── */
+  const toggleSelect = (id) => setSelected((s) => s.indexOf(id) >= 0 ? s.filter((x) => x !== id) : [...s, id]);
+  const exitSelect = () => { setSelectMode(false); setSelected([]); };
+  const bulkDelivered = async (val) => {
+    const ids = selected; if (!ids.length) return;
+    const now = today();
+    setGuests((r) => r.map((g) => ids.indexOf(g.id) < 0 ? g : { ...g, delivered: val, deliveredAt: val ? (g.deliveredAt || now) : "", updatedBy: uidMe }));
+    let error;
+    if (val) {
+      const needDate = guests.filter((g) => ids.indexOf(g.id) >= 0 && !g.deliveredAt).map((g) => g.id);
+      const haveDate = ids.filter((id) => needDate.indexOf(id) < 0);
+      if (needDate.length) ({ error } = await supabase.from("wed_guests").update({ delivered: true, delivered_at: now, updated_by: uidMe }).in("id", needDate));
+      if (!error && haveDate.length) ({ error } = await supabase.from("wed_guests").update({ delivered: true, updated_by: uidMe }).in("id", haveDate));
+    } else {
+      ({ error } = await supabase.from("wed_guests").update({ delivered: false, delivered_at: "", updated_by: uidMe }).in("id", ids));
+    }
+    if (error) toast("일괄 변경에 실패했어요"); else toast(`${ids.length}분을 ${val ? "전달완료" : "미전달"}로 바꿨어요`);
+    exitSelect();
+  };
+  const bulkSide = async (side) => {
+    const ids = selected; if (!ids.length) return;
+    setGuests((r) => r.map((g) => ids.indexOf(g.id) < 0 ? g : { ...g, side, updatedBy: uidMe }));
+    const { error } = await supabase.from("wed_guests").update({ side, updated_by: uidMe }).in("id", ids);
+    if (error) toast("일괄 변경에 실패했어요"); else toast(`${ids.length}분을 ${side}(으)로 바꿨어요`);
+    exitSelect();
+  };
+  const bulkDelete = async () => {
+    const ids = selected; if (!ids.length) return;
+    setGuests((r) => r.filter((g) => ids.indexOf(g.id) < 0));
+    const { error } = await supabase.from("wed_guests").delete().in("id", ids);
+    if (error) toast("삭제에 실패했어요"); else toast(`${ids.length}분을 명단에서 뺐어요`);
+    exitSelect();
+  };
+
+  /* ── 연락처에서 가져오기 (Web Contact Picker API) ── */
+  const contactsSupported = typeof navigator !== "undefined" && "contacts" in navigator && "ContactsManager" in window;
+  const pickContacts = async () => {
+    if (!contactsSupported) { toast("이 브라우저에서는 연락처 가져오기를 지원하지 않아요 (안드로이드 크롬에서 사용)"); return; }
+    try {
+      const picked = await navigator.contacts.select(["name", "tel"], { multiple: true });
+      const list = (picked || []).map((c) => ({ name: (c.name && c.name[0]) || "", tel: (c.tel && c.tel[0]) || "" })).filter((c) => c.name);
+      if (!list.length) { toast("가져온 연락처가 없어요"); return; }
+      setContactImport(list);
+    } catch (e) { if (!/aborted|cancel/i.test(String(e?.message || e))) toast("연락처를 가져오지 못했어요"); }
+  };
+  const importGuests = async (list, side, relation) => {
+    const rows = list.map((c) => ({ id: uid(), name: c.name, side, relation: relation || "", delivered: false, method: "대면", deliverer: "함께", attending: "미정", memo: c.tel || "", deliveredAt: "", createdBy: uidMe, updatedBy: uidMe }));
+    setGuests((r) => [...r, ...rows]);
+    setContactImport(null);
+    const { error } = await supabase.from("wed_guests").insert(rows.map(guestToRow));
+    if (error) { setGuests((r) => r.filter((g) => !rows.some((n) => n.id === g.id))); toast("추가에 실패했어요"); return; }
+    toast(`${rows.length}분을 명단에 넣었어요`);
+  };
+
   /* ── 하객 시트 열기 ── */
   const openGuest = (id) => {
     const g = id ? { ...guests.find((x) => x.id === id) }
@@ -645,14 +749,29 @@ export default function WeddingList() {
       </header>
 
       <main>
-        {tab === "guests" && <GuestsTab {...{ stats, paper, settings, q, setQ, filt, setFilt, undel, setUndel, visible, tick, openGuest, guests }} />}
-        {tab === "meetings" && <MeetingsTab {...{ meetings, mstatus, openMeeting }} />}
+        {tab === "guests" && <GuestsTab {...{ stats, paper, settings, q, setQ, filt, setFilt, undel, setUndel, visible, tick, openGuest, guests, selectMode, setSelectMode, selected, toggleSelect, exitSelect, contactsSupported, pickContacts }} />}
+        {tab === "meetings" && <MeetingsTab {...{ meetings, mstatus, openMeeting, expenseDismiss, setExpenseDismiss, today }} />}
         {tab === "money" && <MoneyTab {...{ calc, settings, csv }} />}
         {tab === "settings" && <SettingsTab {...{ settings, patchSettings, managers, addManager, removeManager, email, setWipeAsk }} />}
       </main>
 
-      {(tab === "guests" || tab === "meetings") &&
+      {(tab === "guests" || tab === "meetings") && !(tab === "guests" && selectMode) &&
         <button className="fab" onClick={addNew} aria-label="새로 넣기"><Plus size={24} /></button>}
+
+      {tab === "guests" && selectMode && (
+        <div className="bulkbar">
+          <div className="cnt"><span>{selected.length}명 선택됨</span>
+            <button style={{ width: "auto", color: "var(--mute)", fontSize: 13 }} onClick={exitSelect}>취소</button></div>
+          <div className="acts">
+            <button onClick={() => bulkDelivered(true)}><Check size={14} style={{ verticalAlign: "-2px" }} /> 전달완료</button>
+            <button onClick={() => bulkDelivered(false)}>미전달로</button>
+            <button onClick={() => bulkSide("신부")} style={{ color: col("신부") }}>→ 신부</button>
+            <button onClick={() => bulkSide("신랑")} style={{ color: col("신랑") }}>→ 신랑</button>
+            <button onClick={() => bulkSide("공동")} style={{ color: col("공동") }}>→ 공동</button>
+            <button className="danger" onClick={bulkDelete}><Trash2 size={14} style={{ verticalAlign: "-2px" }} /> 삭제</button>
+          </div>
+        </div>
+      )}
 
       <nav>
         {[["guests", "하객", Users], ["meetings", "모임", Calendar], ["money", "정산", Wallet], ["settings", "설정", Gear]].map(([t, label, Ic]) => (
@@ -671,6 +790,7 @@ export default function WeddingList() {
           <button className="btn ghost" style={{ marginTop: 8 }} onClick={() => setWipeAsk(false)}>그만두기</button>
         </div></div>
       )}
+      {contactImport && <ContactImportSheet {...{ list: contactImport, relations, onClose: () => setContactImport(null), onImport: importGuests }} />}
       {(accountOpen || needProfile) && <AccountSheet {...{ me, email, onSave: saveProfile, onSignOut: signOut, onClose: () => setAccountOpen(false), firstSetup: needProfile }} />}
 
       {toastMsg && <div className="toast"><span>{toastMsg}</span></div>}
@@ -681,9 +801,11 @@ export default function WeddingList() {
 /* =============================================================================
  *  하객 탭
  * ========================================================================== */
-function GuestsTab({ stats, paper, q, setQ, filt, setFilt, undel, setUndel, visible, tick, openGuest, guests }) {
+function GuestsTab({ stats, paper, q, setQ, filt, setFilt, undel, setUndel, visible, tick, openGuest, guests, selectMode, setSelectMode, selected, toggleSelect, exitSelect, contactsSupported, pickContacts }) {
   const s = stats, pp = paper;
   const warn = pp.left < 0, low = !warn && pp.left <= 5;
+  const allSel = visible.length > 0 && visible.every((g) => selected.indexOf(g.id) >= 0);
+  const toggleAll = () => { if (allSel) visible.forEach((g) => selected.indexOf(g.id) >= 0 && toggleSelect(g.id)); else visible.forEach((g) => selected.indexOf(g.id) < 0 && toggleSelect(g.id)); };
   return (
     <>
       <div className="card">
@@ -725,22 +847,45 @@ function GuestsTab({ stats, paper, q, setQ, filt, setFilt, undel, setUndel, visi
         <button className={"chip " + (undel ? "on" : "")} onClick={() => setUndel(!undel)}>미전달만</button>
       </div>
 
+      {/* 툴바: 일괄 편집 · 연락처 가져오기 */}
+      <div className="toolrow">
+        {!selectMode
+          ? <button className="toolbtn" onClick={() => setSelectMode(true)}><Check size={15} /> 골라서 한번에</button>
+          : <button className="toolbtn on" onClick={toggleAll}>{allSel ? "선택 해제" : "이 목록 모두 선택"}</button>}
+        <button className="toolbtn" onClick={pickContacts} style={contactsSupported ? undefined : { opacity: 0.55 }}>
+          <UserPlus size={15} /> 연락처에서 추가
+        </button>
+      </div>
+
       <div>
         {visible.length === 0
           ? <div className="empty">{guests.length ? "조건에 맞는 하객이 없습니다." : <>오른쪽 아래 + 를 눌러<br />첫 하객을 넣어 보세요.</>}</div>
-          : visible.map((g) => (
-            <div className="row" key={g.id}>
-              <button className={"tick " + (g.delivered ? "on" : "")} style={g.delivered ? { background: col(g.side) } : undefined} onClick={() => tick(g.id)} aria-label="전달 표시">
-                <span style={{ color: g.delivered ? "#fff" : "var(--line)", display: "flex" }}><Check size={18} /></span>
+          : visible.map((g) => {
+            const on = selected.indexOf(g.id) >= 0;
+            if (selectMode) return (
+              <button className="row" key={g.id} style={{ width: "100%", textAlign: "left" }} onClick={() => toggleSelect(g.id)}>
+                <span className={"selbox " + (on ? "on" : "")}>{on && <Check size={15} />}</span>
+                <span className="rowbody">
+                  <span className="rowtop"><span className="nm serif">{g.name}</span>
+                    <span className="tag" style={{ background: col(g.side) + "1A", color: col(g.side) }}>{g.side}</span></span>
+                  <span className="rowsub" style={{ display: "block" }}>{[g.relation, g.delivered ? "전달완료" : "미전달"].filter(Boolean).join(" · ")}</span>
+                </span>
               </button>
-              <button className="rowbody" onClick={() => openGuest(g.id)}>
-                <div className="rowtop"><span className="nm serif">{g.name}</span>
-                  <span className="tag" style={{ background: col(g.side) + "1A", color: col(g.side) }}>{g.side}</span></div>
-                <div className="rowsub">{[g.relation, g.delivered ? (g.method || "전달") + " · " + (g.deliveredAt || "") : "미전달", g.attending && g.attending !== "미정" ? g.attending : ""].filter(Boolean).join(" · ")}</div>
-              </button>
-              <span style={{ color: "var(--line)", display: "flex" }}><ChevronRight size={18} /></span>
-            </div>
-          ))}
+            );
+            return (
+              <div className="row" key={g.id}>
+                <button className={"tick " + (g.delivered ? "on" : "")} style={g.delivered ? { background: col(g.side) } : undefined} onClick={() => tick(g.id)} aria-label="전달 표시">
+                  <span style={{ color: g.delivered ? "#fff" : "var(--line)", display: "flex" }}><Check size={18} /></span>
+                </button>
+                <button className="rowbody" onClick={() => openGuest(g.id)}>
+                  <div className="rowtop"><span className="nm serif">{g.name}</span>
+                    <span className="tag" style={{ background: col(g.side) + "1A", color: col(g.side) }}>{g.side}</span></div>
+                  <div className="rowsub">{[g.relation, g.delivered ? (g.method || "전달") + " · " + (g.deliveredAt || "") : "미전달", g.attending && g.attending !== "미정" ? g.attending : ""].filter(Boolean).join(" · ")}</div>
+                </button>
+                <span style={{ color: "var(--line)", display: "flex" }}><ChevronRight size={18} /></span>
+              </div>
+            );
+          })}
       </div>
     </>
   );
@@ -749,28 +894,45 @@ function GuestsTab({ stats, paper, q, setQ, filt, setFilt, undel, setUndel, visi
 /* =============================================================================
  *  모임 탭
  * ========================================================================== */
-function MeetingsTab({ meetings, mstatus, openMeeting }) {
+function MeetingsTab({ meetings, mstatus, openMeeting, expenseDismiss, setExpenseDismiss, today }) {
   if (!meetings.length) return <div className="empty">오른쪽 아래 + 를 눌러<br />모임을 만들어 보세요.</div>;
-  return meetings.slice().sort((a, b) => (b.date || "").localeCompare(a.date || "")).map((m) => {
-    const s = (m.expenses || []).reduce((a, e) => a + (Number(e.amount) || 0), 0);
-    const st = mstatus(m);
-    return (
-      <button className="card" style={{ display: "block", width: "100%", textAlign: "left" }} key={m.id} onClick={() => openMeeting(m.id)}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-          <div>
-            <div className="serif" style={{ fontSize: 17 }}>{m.place || "장소 미정"}</div>
-            <div className="small" style={{ marginTop: 3 }}>{m.date || "날짜 미정"}
-              {st ? <> · <b style={{ color: st === "완료" ? "var(--mute)" : "var(--bride)" }}>{st}</b></> : <> · <b style={{ color: "var(--both)" }}>오늘</b></>}</div>
-          </div>
-          <span className="tag" style={{ background: col(m.type) + "1A", color: col(m.type) }}>{m.type}</span>
+  // #6 지난 모임인데 지출이 비어 있는 것
+  const t = today();
+  const needExpense = meetings.filter((m) => m.date && m.date < t && (!m.expenses || m.expenses.length === 0));
+  const list = meetings.slice().sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+  return (
+    <>
+      {list.map((m) => {
+        const s = (m.expenses || []).reduce((a, e) => a + (Number(e.amount) || 0), 0);
+        const st = mstatus(m);
+        const flag = m.date && m.date < t && (!m.expenses || m.expenses.length === 0);
+        return (
+          <button className="card" style={{ display: "block", width: "100%", textAlign: "left" }} key={m.id} onClick={() => openMeeting(m.id)}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+              <div>
+                <div className="serif" style={{ fontSize: 17 }}>{m.place || "장소 미정"}</div>
+                <div className="small" style={{ marginTop: 3 }}>{m.date || "날짜 미정"}
+                  {st ? <> · <b style={{ color: st === "완료" ? "var(--mute)" : "var(--bride)" }}>{st}</b></> : <> · <b style={{ color: "var(--both)" }}>오늘</b></>}</div>
+              </div>
+              <span className="tag" style={{ background: col(m.type) + "1A", color: col(m.type) }}>{m.type}</span>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginTop: 13, paddingTop: 13, borderTop: "1px solid var(--line)" }}>
+              <span className="small">{(m.attendeeIds || []).length}명 참석</span>
+              {flag ? <span className="small" style={{ color: "var(--bride)" }}>지출 입력 필요</span>
+                : <span className="serif" style={{ fontSize: 18 }}>{won(s)}원</span>}
+            </div>
+          </button>
+        );
+      })}
+      {needExpense.length > 0 && !expenseDismiss && (
+        <div className="banner">
+          <span className="bt">지난 모임 {needExpense.length}개에 아직 지출이 없어요. 지금 입력할까요?</span>
+          <button className="go" onClick={() => openMeeting(needExpense.sort((a, b) => (b.date || "").localeCompare(a.date || ""))[0].id)}>입력</button>
+          <button className="cl" aria-label="닫기" onClick={() => setExpenseDismiss(true)}><X size={16} /></button>
         </div>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginTop: 13, paddingTop: 13, borderTop: "1px solid var(--line)" }}>
-          <span className="small">{(m.attendeeIds || []).length}명 참석</span>
-          <span className="serif" style={{ fontSize: 18 }}>{won(s)}원</span>
-        </div>
-      </button>
-    );
-  });
+      )}
+    </>
+  );
 }
 
 /* =============================================================================
@@ -840,8 +1002,8 @@ function SettingsTab({ settings, patchSettings, managers, addManager, removeMana
 
       <div className="card">
         <div className="serif" style={{ marginBottom: 12 }}>모바일 청첩장</div>
-        <label className="f"><span>링크</span><input value={settings.link} placeholder="https://" onChange={(e) => patchSettings({ link: e.target.value })} /></label>
-        <label className="f" style={{ marginBottom: 0 }}><span>보낼 멘트</span><textarea rows={4} placeholder="멘트를 넣어 두면 링크와 함께 복사됩니다" value={settings.msg} onChange={(e) => patchSettings({ msg: e.target.value })} /></label>
+        <label className="f"><span>링크</span><LocalText value={settings.link} placeholder="https://" onCommit={(v) => patchSettings({ link: v })} /></label>
+        <label className="f" style={{ marginBottom: 0 }}><span>보낼 멘트</span><LocalText textarea rows={4} placeholder="멘트를 넣어 두면 링크와 함께 복사됩니다" value={settings.msg} onCommit={(v) => patchSettings({ msg: v })} /></label>
         <p className="small" style={{ margin: "10px 0 0", lineHeight: 1.6 }}>멘트 끝에 링크가 자동으로 붙습니다. 멘트 안에 링크를 직접 넣으셨다면 그대로 복사됩니다.</p>
       </div>
 
@@ -944,6 +1106,16 @@ function MeetingSheet({ mDraft, setMDraft, exDraft, setExDraft, guests, meetings
   const payer = allow.indexOf(exDraft.payer) < 0 ? allow[0] : exDraft.payer;
 
   const toggleAtt = (id) => { const cur = m.attendeeIds || []; const i = cur.indexOf(id); set("attendeeIds", i >= 0 ? cur.filter((x) => x !== id) : [...cur, id]); };
+  // #3 그룹(구분·관계) 단위로 참석자 추가/해제
+  const groups = [];
+  SIDES.forEach((sd) => { const ids = guests.filter((g) => g.side === sd).map((g) => g.id); if (ids.length) groups.push({ label: sd + " 모두", ids, color: col(sd) }); });
+  const rels = []; guests.forEach((g) => { if (g.relation && rels.indexOf(g.relation) < 0) rels.push(g.relation); });
+  rels.slice(0, 6).forEach((rl) => { const ids = guests.filter((g) => g.relation === rl).map((g) => g.id); if (ids.length > 1) groups.push({ label: rl, ids }); });
+  const toggleGroup = (ids) => {
+    const cur = m.attendeeIds || [];
+    const allIn = ids.every((id) => cur.indexOf(id) >= 0);
+    set("attendeeIds", allIn ? cur.filter((id) => ids.indexOf(id) < 0) : Array.from(new Set([...cur, ...ids])));
+  };
   const addEx = () => {
     if (!exDraft.label.trim() || !exDraft.amount) { return; }
     set("expenses", [...(m.expenses || []), { id: uid(), label: exDraft.label, amount: exDraft.amount, payer, category: exDraft.category }]);
@@ -972,7 +1144,16 @@ function MeetingSheet({ mDraft, setMDraft, exDraft, setExDraft, guests, meetings
           <label className="f"><span>참석자 {(m.attendeeIds || []).length}명</span>
             {!guests.length
               ? <div className="mini small">하객 탭에서 명단을 먼저 만들어 주세요.</div>
-              : <div style={{ border: "1px solid var(--line)", borderRadius: 12, padding: 6, maxHeight: 190, overflowY: "auto" }}>
+              : <>
+                {groups.length > 0 && (
+                  <div className="chips" style={{ marginBottom: 8 }}>
+                    {groups.map((gr) => {
+                      const allIn = gr.ids.every((id) => (m.attendeeIds || []).indexOf(id) >= 0);
+                      return <button key={gr.label} className={"grpchip " + (allIn ? "on" : "")} style={!allIn && gr.color ? { color: gr.color, borderColor: gr.color } : undefined} onClick={() => toggleGroup(gr.ids)}>{allIn ? "− " : "+ "}{gr.label}</button>;
+                    })}
+                  </div>
+                )}
+                <div style={{ border: "1px solid var(--line)", borderRadius: 12, padding: 6, maxHeight: 190, overflowY: "auto" }}>
                   {guests.slice().sort((a, b) => a.name.localeCompare(b.name, "ko")).map((g) => {
                     const on = (m.attendeeIds || []).indexOf(g.id) >= 0;
                     return (
@@ -982,7 +1163,8 @@ function MeetingSheet({ mDraft, setMDraft, exDraft, setExDraft, guests, meetings
                       </button>
                     );
                   })}
-                </div>}
+                </div>
+              </>}
           </label>
 
           <div style={{ marginBottom: 16 }}>
@@ -1063,6 +1245,41 @@ function AccountSheet({ me, email, onSave, onSignOut, onClose, firstSetup }) {
             <button className="btn ghost" style={{ marginBottom: 8 }} onClick={() => { setName(me.name || ""); setEmoji(me.emoji || "💍"); setEditing(true); }}><Pencil size={15} /> 프로필 수정</button>
             <button className="btn ghost" onClick={onSignOut}><LogOut size={15} /> 로그아웃</button>
           </>)}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* =============================================================================
+ *  연락처에서 가져오기 — 선택한 연락처를 하객으로 일괄 추가
+ * ========================================================================== */
+function ContactImportSheet({ list, relations, onClose, onImport }) {
+  const [side, setSide] = useState("신부");
+  const [relation, setRelation] = useState("");
+  return (
+    <div className="veil" onClick={(e) => { if (e.target.classList.contains("veil")) onClose(); }}>
+      <div className="sheet">
+        <div className="shead"><h2 className="serif">연락처에서 {list.length}명 추가</h2>
+          <button aria-label="닫기" style={{ color: "var(--mute)", padding: 6, margin: -6, width: "auto" }} onClick={onClose}><X size={20} /></button></div>
+        <div className="sbody">
+          <label className="f"><span>이 분들을 어느 쪽으로 넣을까요?</span><Seg opts={SIDES} cur={side} onPick={setSide} colored /></label>
+          <label className="f"><span>관계 (선택)</span>
+            <input value={relation} placeholder="회사 · 대학 · 가족 · 친구" onChange={(e) => setRelation(e.target.value)} />
+            {relations.length > 0 && <div className="chips" style={{ margin: "8px 0 0" }}>{relations.map((r) => <button key={r} className="chip" onClick={() => setRelation(r)}>{r}</button>)}</div>}
+          </label>
+          <label className="f"><span>가져온 연락처</span>
+            <div style={{ border: "1px solid var(--line)", borderRadius: 12, padding: 6, maxHeight: 240, overflowY: "auto" }}>
+              {list.map((c, i) => (
+                <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 12px" }}>
+                  <span style={{ fontSize: 14.5 }}>{c.name}</span>
+                  {c.tel && <span className="small" style={{ fontSize: 12.5 }}>{c.tel}</span>}
+                </div>
+              ))}
+            </div>
+            <p className="small" style={{ margin: "8px 0 0", fontSize: 12.5, lineHeight: 1.6 }}>전화번호는 각 하객의 메모에 저장됩니다. 넣은 뒤 개별로 관계·전달 여부를 고칠 수 있어요.</p>
+          </label>
+          <button className="btn" onClick={() => onImport(list, side, relation)}><UserPlus size={16} /> {list.length}명 명단에 넣기</button>
         </div>
       </div>
     </div>
