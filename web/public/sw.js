@@ -5,6 +5,8 @@
 const CACHE = "wed-invite-v1";
 
 self.addEventListener("install", () => self.skipWaiting());
+// 페이지가 새 버전 활성화를 요청하면 즉시 대기 해제
+self.addEventListener("message", (e) => { if (e.data === "skipWaiting") self.skipWaiting(); });
 self.addEventListener("activate", (e) => {
   e.waitUntil(
     caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)))).then(() => self.clients.claim())
