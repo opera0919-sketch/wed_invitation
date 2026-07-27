@@ -36,6 +36,7 @@ create table if not exists public.wed_guests (
   attending    text default '미정',       -- 미정 / 참석 / 불참
   memo         text default '',
   delivered_at text default '',
+  gift         text default '',        -- 받은 축의금 (엑셀 업로드로 기록/비교)
   created_by   text default '',
   updated_by   text default '',
   created_at   timestamptz default now()
