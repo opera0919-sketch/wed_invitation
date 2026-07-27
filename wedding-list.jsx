@@ -228,7 +228,7 @@ const CSS = `
 /* 한 줄 하객 리스트 + 내부 스크롤 */
 .wl.fixedscreen{height:100dvh;overflow:hidden;display:flex;flex-direction:column}
 .wl.fixedscreen header{flex:0 0 auto}
-.wl main.guestsmain{flex:1 1 auto;display:flex;flex-direction:column;min-height:0;padding-top:0;padding-bottom:0;overflow:hidden}
+.wl main.scrollmain{flex:1 1 auto;display:flex;flex-direction:column;min-height:0;padding-top:0;padding-bottom:0;overflow:hidden}
 .wl .glistwrap{flex:1;min-height:0;background:var(--card);border:1px solid var(--line);border-radius:16px;overflow:hidden;display:flex;flex-direction:column;margin-bottom:calc(66px + var(--safe-b))}
 .wl .glist{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch}
 .wl .g1{display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid var(--line);width:100%;text-align:left;background:none}
@@ -240,6 +240,9 @@ const CSS = `
 .wl .g1 .meta{flex:1;min-width:0;font-size:12px;color:var(--mute);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:right}
 .wl .g1 .att{flex:0 0 auto;font-size:11px;padding:1px 7px;border-radius:99px;margin:0}
 .wl .ghdr1{position:sticky;top:0;z-index:1;background:var(--paper);display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--line)}
+/* 세그먼트 전달바 */
+.wl .segbar{display:flex;height:8px;border-radius:99px;background:var(--line);overflow:hidden;margin:12px 0}
+.wl .segbar>i{height:100%;transition:width .4s}
 /* 통계 요약 타일 */
 .wl .stats3{display:flex;gap:10px}
 .wl .stats3 .t{flex:1;background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px 10px;text-align:center}
@@ -279,6 +282,18 @@ function Seg({ opts, cur, onPick, colored }) {
             onClick={() => onPick(o)}>{o}</button>
         );
       })}
+    </div>
+  );
+}
+
+/* 세그먼트 전달바 — 신부/신랑/공동 색으로 전달 완료분을 구분 표시 */
+function DeliveryBar({ pool, total }) {
+  const done = { 신부: 0, 신랑: 0, 공동: 0 };
+  (pool || []).forEach((g) => { if (g.delivered) done[g.side] = (done[g.side] || 0) + 1; });
+  const t = total || (pool || []).length || 1;
+  return (
+    <div className="segbar">
+      {SIDES.map((s) => done[s] > 0 ? <i key={s} style={{ width: (done[s] / t * 100) + "%", background: col(s) }} /> : null)}
     </div>
   );
 }
@@ -603,9 +618,10 @@ export default function WeddingList() {
     return true;
   };
   const tick = async (id) => {
-    let next;
-    setGuests((r) => r.map((x) => { if (x.id !== id) return x; next = x.delivered ? { ...x, delivered: false, deliveredAt: "", updatedBy: uidMe } : { ...x, delivered: true, deliveredAt: x.deliveredAt || today(), updatedBy: uidMe }; return next; }));
-    if (next) await persistGuest(next);
+    const cur = guests.find((x) => x.id === id); if (!cur) return;
+    const next = cur.delivered ? { ...cur, delivered: false, deliveredAt: "", updatedBy: uidMe } : { ...cur, delivered: true, deliveredAt: cur.deliveredAt || today(), updatedBy: uidMe };
+    setGuests((r) => r.map((x) => x.id === id ? next : x));
+    await persistGuest(next);
   };
 
   const patchSettings = async (patch) => {
@@ -686,8 +702,10 @@ export default function WeddingList() {
 
   // 참석여부 한 건 바로 바꾸기 (홈 조치 필요 카드 등)
   const setAttending = async (id, val) => {
-    let next; setGuests((r) => r.map((x) => { if (x.id !== id) return x; next = { ...x, attending: val, updatedBy: uidMe }; return next; }));
-    if (next) await persistGuest(next);
+    const cur = guests.find((x) => x.id === id); if (!cur) return;
+    const next = { ...cur, attending: val, updatedBy: uidMe };
+    setGuests((r) => r.map((x) => x.id === id ? next : x));
+    await persistGuest(next);
   };
   // 새 하객 즉시 생성 (모임 참석자 검색에서 없는 사람 추가)
   const createGuestQuick = async (name, side = "신부") => {
@@ -894,7 +912,7 @@ export default function WeddingList() {
   if (access === "unknown" || !loaded) return <><style>{CSS}</style><div className="wl"><div className="center"><span className="small">불러오는 중…</span></div></div></>;
 
   return (
-    <><style>{CSS}</style><div className={"wl" + (tab === "guests" ? " fixedscreen" : "")}>
+    <><style>{CSS}</style><div className={"wl" + (tab === "guests" || tab === "meetings" ? " fixedscreen" : "")}>
       <header>
         <div className="hrow">
           <h1 className="serif">청첩장 명단</h1>
@@ -907,12 +925,11 @@ export default function WeddingList() {
           <p className="sub">{stats.scope === "전체" ? "아직" : stats.scope + " 하객 중 아직"} {stats.left}분에게 청첩장을 전하지 않았습니다.</p>}
       </header>
 
-      <main className={tab === "guests" ? "guestsmain" : undefined}>
-        {tab === "home" && <HomeTab {...{ overall, calc, totalBudget, dday, nextMeeting, actionNeeded, setAttending, mstatus, go: setTab, openMeeting }} />}
+      <main className={tab === "guests" || tab === "meetings" ? "scrollmain" : undefined}>
+        {tab === "home" && <HomeTab {...{ overall, calc, totalBudget, dday, nextMeeting, actionNeeded, setAttending, guests, mstatus, go: setTab, openMeeting }} />}
         {tab === "guests" && <GuestsTab {...{ stats, paper, q, setQ, filt, setFilt, deliv, setDeliv, attFilt, setAttFilt, visible, tick, openGuest, guests, selectMode, setSelectMode, selected, toggleSelect, exitSelect, contactsSupported, pickContacts, groupBy, setGroupBy, collapsed, toggleCollapse, csv, onExcelFile }} />}
-        {tab === "meetings" && <MeetingsTab {...{ meetings, meetingStats, mstatus, openMeeting, expenseDismiss, setExpenseDismiss, today }} />}
-        {tab === "money" && <MoneyTab {...{ overall, calc, totalBudget, guests, meetings, openMeeting, onExcelFile }} />}
-        {tab === "settings" && <SettingsTab {...{ settings, patchSettings, managers, addManager, removeManager, email, setWipeAsk, copyLink, copyMsg }} />}
+        {tab === "meetings" && <MeetingsTab {...{ meetings, calc, totalBudget, guests, mstatus, openMeeting, today }} />}
+        {tab === "settings" && <SettingsTab {...{ settings, patchSettings, managers, addManager, removeManager, email, setWipeAsk, copyLink, copyMsg, guests, onExcelFile }} />}
       </main>
 
       {(tab === "guests" || tab === "meetings") && !(tab === "guests" && selectMode) &&
@@ -937,7 +954,7 @@ export default function WeddingList() {
       )}
 
       <nav>
-        {[["home", "홈", LayoutDashboard], ["guests", "하객", Users], ["meetings", "모임", Calendar], ["money", "정산", Wallet], ["settings", "설정", Gear]].map(([t, label, Ic]) => (
+        {[["home", "홈", LayoutDashboard], ["guests", "하객", Users], ["meetings", "모임", Calendar], ["settings", "설정", Gear]].map(([t, label, Ic]) => (
           <button key={t} className={tab === t ? "on" : ""} onClick={() => setTab(t)}><Ic size={20} /><span>{label}</span></button>
         ))}
       </nav>
@@ -965,7 +982,7 @@ export default function WeddingList() {
 /* =============================================================================
  *  홈 (대시보드)
  * ========================================================================== */
-function HomeTab({ overall, calc, totalBudget, dday, nextMeeting, actionNeeded, setAttending, mstatus, go, openMeeting }) {
+function HomeTab({ overall, calc, totalBudget, dday, nextMeeting, actionNeeded, setAttending, guests, mstatus, go, openMeeting }) {
   const spent = calc.total;
   const bpct = totalBudget ? Math.min(100, Math.round(spent / totalBudget * 100)) : 0;
   const over = totalBudget && spent > totalBudget;
@@ -984,25 +1001,26 @@ function HomeTab({ overall, calc, totalBudget, dday, nextMeeting, actionNeeded, 
           <div className="metric" style={{ marginBottom: 6 }}>
             <span className="k" style={{ color: "var(--bride)", display: "flex", alignItems: "center", gap: 6 }}><AlertCircle size={16} /> 참석 확인이 필요해요</span>
             <span className="small">{actionNeeded.length}명</span></div>
-          <p className="small" style={{ margin: "0 0 8px", fontSize: 12.5, lineHeight: 1.5 }}>모임에 참석했는데 참석 여부가 아직 미정이에요. 바로 정해 주세요.</p>
-          {actionNeeded.slice(0, 6).map((g) => (
-            <div className="todo" key={g.id}>
-              <span className="dot" style={{ background: col(g.side) }} />
-              <span className="nm">{g.name}<span className="small" style={{ fontSize: 12 }}> · {g.side}{g.relation ? " · " + g.relation : ""}</span></span>
-              <span className="acts">
-                <button className="y" onClick={() => setAttending(g.id, "참석")}>참석</button>
-                <button onClick={() => setAttending(g.id, "불참")}>불참</button>
-              </span>
-            </div>
-          ))}
-          {actionNeeded.length > 6 && <button className="small" style={{ marginTop: 8, color: "var(--mute)" }} onClick={() => go("guests")}>하객 탭에서 모두 보기 →</button>}
+          <p className="small" style={{ margin: "0 0 8px", fontSize: 12.5, lineHeight: 1.5 }}>모임에 참석했는데 참석 여부가 아직 미정이에요.</p>
+          <div style={{ maxHeight: 216, overflowY: "auto", margin: "0 -4px", padding: "0 4px" }}>
+            {actionNeeded.map((g) => (
+              <div className="todo" key={g.id}>
+                <span className="dot" style={{ background: col(g.side) }} />
+                <span className="nm">{g.name}<span className="small" style={{ fontSize: 12 }}> · {g.side}{g.relation ? " · " + g.relation : ""}</span></span>
+                <span className="acts">
+                  <button className="y" onClick={() => setAttending(g.id, "참석")}>참석</button>
+                  <button onClick={() => setAttending(g.id, "불참")}>불참</button>
+                </span>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
       {/* 청첩장 전달 달성률 */}
       <button className="card" style={{ display: "block", width: "100%", textAlign: "left" }} onClick={() => go("guests")}>
         <div className="metric"><span className="k">청첩장 전달 달성률</span><span className="serif v">{overall.pct}%</span></div>
-        <div className="bar"><i style={{ width: overall.pct + "%" }} /></div>
+        <DeliveryBar pool={guests} total={overall.total} />
         <div className="small">{overall.total ? <>{overall.done} / {overall.total}명 전달 · 남은 <b style={{ color: overall.left ? "var(--bride)" : "var(--mute)" }}>{overall.left}</b>명</> : "하객을 먼저 넣어 주세요"}</div>
       </button>
 
@@ -1096,7 +1114,7 @@ function GuestsTab({ stats, paper, q, setQ, filt, setFilt, deliv, setDeliv, attF
           <span className="serif" style={{ fontSize: 22 }}>{s.done}<span className="small"> / {s.total}</span>
             {paper.total > 0 && <span className="small" style={{ marginLeft: 10, color: paper.left < 0 ? "var(--bride)" : "var(--mute)" }}>· 종이 {paper.left}/{paper.total}</span>}</span>
         </div>
-        <div className="bar" style={{ margin: "10px 0" }}><i style={{ width: s.pct + "%" }} /></div>
+        <DeliveryBar pool={filt === "전체" ? guests : guests.filter((g) => g.side === filt)} total={s.total} />
         {s.total > 0 && (
           <div style={{ display: "flex", gap: 6 }}>
             {attTile("참석", s.att.참석, "var(--both)")}
@@ -1155,155 +1173,111 @@ function GuestsTab({ stats, paper, q, setQ, filt, setFilt, deliv, setDeliv, attF
 /* =============================================================================
  *  모임 탭
  * ========================================================================== */
-function MeetingsTab({ meetings, meetingStats, mstatus, openMeeting, expenseDismiss, setExpenseDismiss, today }) {
-  if (!meetings.length) return <div className="empty">오른쪽 아래 + 를 눌러<br />모임을 만들어 보세요.</div>;
-  // #6 지난 모임인데 지출이 비어 있는 것
-  const t = today();
-  const needExpense = meetings.filter((m) => m.date && m.date < t && (!m.expenses || m.expenses.length === 0));
-  const list = meetings.slice().sort((a, b) => (b.date || "").localeCompare(a.date || ""));
-  return (
-    <>
-      {/* 통계 요약 */}
-      <div className="stats3" style={{ marginBottom: 16 }}>
-        <div className="t"><div className="serif v">{meetingStats.count}<span className="small" style={{ fontSize: 12 }}>회</span></div><div className="l">모임</div></div>
-        <div className="t"><div className="serif v">{meetingStats.attendees}<span className="small" style={{ fontSize: 12 }}>명</span></div><div className="l">참석 인원</div></div>
-        <div className="t"><div className="serif v" style={{ fontSize: 17 }}>{won(meetingStats.avg)}</div><div className="l">평균 지출(원)</div></div>
-      </div>
-
-      {list.map((m) => {
-        const s = (m.expenses || []).reduce((a, e) => a + (Number(e.amount) || 0), 0);
-        const st = mstatus(m);
-        const flag = m.date && m.date < t && (!m.expenses || m.expenses.length === 0);
-        return (
-          <button className="card" style={{ display: "block", width: "100%", textAlign: "left" }} key={m.id} onClick={() => openMeeting(m.id)}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-              <div>
-                <div className="serif" style={{ fontSize: 17 }}>{m.place || "장소 미정"}</div>
-                <div className="small" style={{ marginTop: 3 }}>{m.date || "날짜 미정"}
-                  {st ? <> · <b style={{ color: st === "완료" ? "var(--mute)" : "var(--bride)" }}>{st}</b></> : <> · <b style={{ color: "var(--both)" }}>오늘</b></>}</div>
-              </div>
-              <span className="tag" style={{ background: col(m.type) + "1A", color: col(m.type) }}>{m.type}</span>
-            </div>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginTop: 13, paddingTop: 13, borderTop: "1px solid var(--line)" }}>
-              <span className="small">{(m.attendeeIds || []).length}명 참석</span>
-              {flag ? <span className="small" style={{ color: "var(--bride)" }}>지출 입력 필요</span>
-                : <span className="serif" style={{ fontSize: 18 }}>{won(s)}원</span>}
-            </div>
-          </button>
-        );
-      })}
-      {needExpense.length > 0 && !expenseDismiss && (
-        <div className="banner">
-          <span className="bt">지난 모임 {needExpense.length}개에 아직 지출이 없어요. 지금 입력할까요?</span>
-          <button className="go" onClick={() => openMeeting(needExpense.sort((a, b) => (b.date || "").localeCompare(a.date || ""))[0].id)}>입력</button>
-          <button className="cl" aria-label="닫기" onClick={() => setExpenseDismiss(true)}><X size={16} /></button>
-        </div>
-      )}
-    </>
-  );
-}
-
-/* =============================================================================
- *  정산 탭
- * ========================================================================== */
-function MoneyTab({ overall, calc, totalBudget, guests, meetings, openMeeting, onExcelFile }) {
+function MeetingsTab({ meetings, calc, totalBudget, guests, mstatus, openMeeting, today }) {
   const [mq, setMq] = useState("");
-  const spent = calc.total;
-  const bpct = totalBudget ? Math.min(100, Math.round(spent / totalBudget * 100)) : 0;
+  const [mfilt, setMfilt] = useState("전체"); // 전체 | 예정 | 완료 | 정산필요
+  const t = today();
+  const spent = calc.total, spendB = calc.spend["신부"], spendG = calc.spend["신랑"];
   const over = totalBudget && spent > totalBudget;
-  const query = mq.trim();
-  const matches = query ? guests.filter((g) => (g.name + (g.relation || "")).indexOf(query) >= 0).slice(0, 10) : [];
-  const meetingsOf = (gid) => meetings.filter((m) => (m.attendeeIds || []).indexOf(gid) >= 0).sort((a, b) => (b.date || "").localeCompare(a.date || ""));
   const amtOf = (m) => (m.expenses || []).reduce((a, e) => a + (Number(e.amount) || 0), 0);
-  // 특정인에게 쓴 1인당 금액 = Σ (그 모임 지출 / 참석 인원)
-  const perPersonSpent = (gid) => meetingsOf(gid).reduce((a, m) => { const n = (m.attendeeIds || []).length || 1; return a + amtOf(m) / n; }, 0);
-  // 축의금 집계
-  const giftGuests = guests.filter((g) => Number(g.gift) > 0);
-  const giftTotal = guests.reduce((a, g) => a + (Number(g.gift) || 0), 0);
+  const needExpense = meetings.filter((m) => m.date && m.date < t && (!m.expenses || m.expenses.length === 0));
+  const query = mq.trim();
+  const nameOf = (id) => { const g = guests.find((x) => x.id === id); return g ? g.name : ""; };
+  const matchM = (m) => !query || (m.place || "").indexOf(query) >= 0 || (m.date || "").indexOf(query) >= 0 || (m.attendeeIds || []).some((id) => nameOf(id).indexOf(query) >= 0);
+  const matchF = (m) => mfilt === "전체" || (mfilt === "정산필요" ? (m.date && m.date < t && (!m.expenses || !m.expenses.length)) : mstatus(m) === mfilt);
+  const list = meetings.filter((m) => matchM(m) && matchF(m)).sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+  // 검색어가 하객 이름과 맞으면 그 사람에게 쓴 1인당 금액
+  const perGuest = query ? guests.filter((g) => g.name.indexOf(query) >= 0).slice(0, 3).map((g) => {
+    const ms = meetings.filter((m) => (m.attendeeIds || []).includes(g.id));
+    const pp = Math.round(ms.reduce((a, m) => a + amtOf(m) / ((m.attendeeIds || []).length || 1), 0));
+    return { g, count: ms.length, pp };
+  }).filter((x) => x.count > 0) : [];
+
   return (
     <>
-      {/* 청첩장 전달 진척률 */}
-      <div className="card">
-        <div className="metric"><span className="k">청첩장 전달 진척률</span><span className="serif v">{overall.pct}%</span></div>
-        <div className="bar"><i style={{ width: overall.pct + "%" }} /></div>
-        <div className="small">{overall.total ? <>{overall.done} / {overall.total}명 전달 · 남은 <b style={{ color: overall.left ? "var(--bride)" : "var(--mute)" }}>{overall.left}</b>명</> : "하객을 먼저 넣어 주세요"}</div>
-      </div>
-
-      {/* 예산 사용 금액 대조 (신부/신랑 구분 없이 전체) */}
-      <div className="card">
+      {/* 1. 예산 사용 금액 (신부/신랑 색 구분) */}
+      <div className="card" style={{ marginBottom: 12 }}>
         <div className="metric"><span className="k">예산 사용 금액</span>
           <span className="serif v" style={{ color: over ? "var(--bride)" : "var(--ink)" }}>{won(spent)}원</span></div>
-        {totalBudget ? (<>
-          <div className="bar"><i style={{ width: bpct + "%", background: over ? "var(--bride)" : "var(--groom)" }} /></div>
-          <div className="small" style={{ color: over ? "var(--bride)" : "var(--mute)" }}>
-            {over ? `예산 ${won(totalBudget)}원보다 ${won(spent - totalBudget)}원 더 썼어요` : `예산 ${won(totalBudget)}원 중 ${won(totalBudget - spent)}원 남았어요 (${bpct}% 사용)`}</div>
-        </>) : <div className="small" style={{ marginTop: 8 }}>설정 탭에서 예산을 넣으면 사용률이 보여요</div>}
+        <div className="segbar">
+          {totalBudget ? <>
+            {spendB > 0 && <i style={{ width: Math.min(100, spendB / totalBudget * 100) + "%", background: col("신부") }} />}
+            {spendG > 0 && <i style={{ width: Math.min(100, spendG / totalBudget * 100) + "%", background: col("신랑") }} />}
+          </> : null}
+        </div>
+        {totalBudget
+          ? <div className="small" style={{ color: over ? "var(--bride)" : "var(--mute)" }}>
+              <b style={{ color: col("신부") }}>신부 {won(spendB)}</b> · <b style={{ color: col("신랑") }}>신랑 {won(spendG)}</b>
+              {" · "}{over ? `예산 ${won(totalBudget)}원 초과 ${won(spent - totalBudget)}원` : `예산 중 ${won(totalBudget - spent)}원 남음`}</div>
+          : <div className="small">설정 탭에서 예산을 넣으면 사용률이 보여요</div>}
       </div>
 
-      {/* 이름으로 참석 모임 조회 */}
-      <div className="card">
-        <div className="metric" style={{ marginBottom: 12 }}><span className="k">참석 모임 조회</span></div>
-        <div className="search" style={{ marginBottom: query ? 12 : 0 }}>
-          <span className="si"><Search size={17} /></span>
-          <input value={mq} placeholder="이름으로 찾기" onChange={(e) => setMq(e.target.value)} />
+      {/* 2. 정산이 필요한 모임 */}
+      {needExpense.length > 0 && (
+        <div className="card" style={{ marginBottom: 12, borderColor: "var(--bride)" }}>
+          <div className="metric" style={{ marginBottom: 8 }}>
+            <span className="k" style={{ color: "var(--bride)", display: "flex", alignItems: "center", gap: 6 }}><AlertCircle size={16} /> 정산이 필요한 모임</span>
+            <span className="small">{needExpense.length}개</span></div>
+          {needExpense.slice().sort((a, b) => (b.date || "").localeCompare(a.date || "")).map((m) => (
+            <button key={m.id} className="exp" style={{ width: "100%", textAlign: "left" }} onClick={() => openMeeting(m.id)}>
+              <div><div style={{ fontSize: 14 }}>{m.place || "장소 미정"}</div><div className="small" style={{ fontSize: 12 }}>{m.date} · {(m.attendeeIds || []).length}명</div></div>
+              <span className="small" style={{ color: "var(--bride)" }}>지출 입력 →</span>
+            </button>
+          ))}
         </div>
-        {query && (matches.length === 0
-          ? <div className="small" style={{ padding: "8px 2px" }}>‘{query}’ 님을 찾지 못했어요.</div>
-          : matches.map((g) => {
-            const ms = meetingsOf(g.id);
-            const pp = Math.round(perPersonSpent(g.id));
-            return (
-              <div key={g.id} style={{ padding: "10px 0", borderTop: "1px solid var(--line)" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 6 }}>
-                  <span className="serif" style={{ fontSize: 15 }}>{g.name}</span>
-                  <span className="tag" style={{ background: col(g.side) + "1A", color: col(g.side) }}>{g.side}</span>
-                  <span className="small" style={{ fontSize: 12 }}>모임 {ms.length}회</span>
-                </div>
-                {ms.length > 0 && (
-                  <div className="mini" style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 8, padding: "10px 12px" }}>
-                    <span className="small" style={{ fontSize: 12.5 }}>이 분에게 쓴 1인당 금액</span>
-                    <span className="serif" style={{ fontSize: 16, color: "var(--groom)" }}>{won(pp)}원</span></div>
-                )}
-                {ms.length === 0
-                  ? <div className="small" style={{ fontSize: 13 }}>참석한 모임이 없어요.</div>
-                  : ms.map((m) => {
-                    const n = (m.attendeeIds || []).length || 1;
-                    return (
-                      <button key={m.id} className="exp" style={{ width: "100%", textAlign: "left" }} onClick={() => openMeeting(m.id)}>
-                        <div><div style={{ fontSize: 14 }}>{m.place || "장소 미정"}</div><div className="small" style={{ fontSize: 12 }}>{m.date || "날짜 미정"} · {n}명</div></div>
-                        <span className="small" style={{ fontSize: 13 }}>1인 {won(Math.round(amtOf(m) / n))}원</span>
-                      </button>
-                    );
-                  })}
-              </div>
-            );
-          }))}
+      )}
+
+      {/* 3. 모임 찾기 */}
+      <div className="search" style={{ marginBottom: perGuest.length ? 10 : 8 }}>
+        <span className="si"><Search size={17} /></span>
+        <input value={mq} placeholder="참석자·모임명·날짜·장소로 찾기" onChange={(e) => setMq(e.target.value)} />
+      </div>
+      {perGuest.length > 0 && (
+        <div className="card" style={{ marginBottom: 10, padding: 12 }}>
+          {perGuest.map(({ g, count, pp }) => (
+            <div key={g.id} className="money" style={{ marginBottom: 0 }}>
+              <span>{g.name}<span className="small" style={{ fontSize: 12, color: col(g.side) }}> · {g.side}</span><span className="small" style={{ fontSize: 12 }}> · {count}회</span></span>
+              <span className="small">1인당 <b className="serif" style={{ color: "var(--groom)" }}>{won(pp)}원</b></span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* 4. 모임 필터 */}
+      <div className="chips" style={{ marginBottom: 10 }}>
+        {["전체", "예정", "완료", "정산필요"].map((x) => (
+          <button key={x} className={"chip " + (mfilt === x ? "on" : "")}
+            style={mfilt === x && x === "정산필요" ? { background: "var(--bride)", borderColor: "var(--bride)" } : undefined}
+            onClick={() => setMfilt(x)}>{x}</button>
+        ))}
       </div>
 
-      {/* 축의금 기록 · 엑셀 업로드로 대조 */}
-      <div className="card">
-        <div className="metric" style={{ marginBottom: 8 }}>
-          <span className="k" style={{ display: "flex", alignItems: "center", gap: 6 }}><Gift size={16} /> 받은 축의금</span>
-          <span className="serif v">{won(giftTotal)}원</span></div>
-        <div className="small" style={{ marginBottom: 12, lineHeight: 1.6, fontSize: 12.5 }}>
-          {giftGuests.length > 0
-            ? <>{giftGuests.length}명 기록됨 · 명단 {guests.length}명 중 {guests.length - giftGuests.length}명 미기록</>
-            : <>엑셀(이름·축의금 열)을 올리면 하객과 축의금을 매칭해 기록·비교할 수 있어요.</>}
+      {/* 5. 모임 리스트 (내부 스크롤) */}
+      <div className="glistwrap" style={{ background: "none", border: "none" }}>
+        <div className="glist">
+          {list.length === 0
+            ? <div className="empty">{meetings.length ? "조건에 맞는 모임이 없어요." : <>오른쪽 아래 + 를 눌러<br />모임을 만들어 보세요.</>}</div>
+            : list.map((m) => {
+              const s = amtOf(m), st = mstatus(m), flag = m.date && m.date < t && (!m.expenses || !m.expenses.length);
+              return (
+                <button className="card" style={{ display: "block", width: "100%", textAlign: "left", marginBottom: 10 }} key={m.id} onClick={() => openMeeting(m.id)}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                    <div>
+                      <div className="serif" style={{ fontSize: 17 }}>{m.place || "장소 미정"}</div>
+                      <div className="small" style={{ marginTop: 3 }}>{m.date || "날짜 미정"}
+                        {st ? <> · <b style={{ color: st === "완료" ? "var(--mute)" : "var(--bride)" }}>{st}</b></> : <> · <b style={{ color: "var(--both)" }}>오늘</b></>}</div>
+                    </div>
+                    <span className="tag" style={{ background: col(m.type) + "1A", color: col(m.type) }}>{m.type}</span>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginTop: 13, paddingTop: 13, borderTop: "1px solid var(--line)" }}>
+                    <span className="small">{(m.attendeeIds || []).length}명 참석</span>
+                    {flag ? <span className="small" style={{ color: "var(--bride)" }}>지출 입력 필요</span>
+                      : <span className="serif" style={{ fontSize: 18 }}>{won(s)}원</span>}
+                  </div>
+                </button>
+              );
+            })}
         </div>
-        <label className="btn ghost" style={{ cursor: "pointer" }}>
-          <Upload size={16} /> 엑셀로 축의금 올리기
-          <input type="file" accept=".xlsx,.xls,.csv" style={{ display: "none" }} onChange={onExcelFile("gift")} />
-        </label>
-        {giftGuests.length > 0 && (
-          <div style={{ marginTop: 12 }}>
-            {giftGuests.slice().sort((a, b) => (Number(b.gift) || 0) - (Number(a.gift) || 0)).slice(0, 12).map((g) => (
-              <div key={g.id} className="money" style={{ marginBottom: 8 }}>
-                <span>{g.name}<span className="small" style={{ fontSize: 12, color: col(g.side) }}> · {g.side}</span></span>
-                <span className="serif" style={{ fontSize: 14 }}>{won(g.gift)}원</span>
-              </div>
-            ))}
-          </div>
-        )}
       </div>
     </>
   );
@@ -1312,8 +1286,10 @@ function MoneyTab({ overall, calc, totalBudget, guests, meetings, openMeeting, o
 /* =============================================================================
  *  설정 탭
  * ========================================================================== */
-function SettingsTab({ settings, patchSettings, managers, addManager, removeManager, email, setWipeAsk, copyLink, copyMsg }) {
+function SettingsTab({ settings, patchSettings, managers, addManager, removeManager, email, setWipeAsk, copyLink, copyMsg, guests, onExcelFile }) {
   const [newEmail, setNewEmail] = useState("");
+  const giftGuests = guests.filter((g) => Number(g.gift) > 0);
+  const giftTotal = guests.reduce((a, g) => a + (Number(g.gift) || 0), 0);
   return (
     <>
       <div className="card">
@@ -1332,6 +1308,32 @@ function SettingsTab({ settings, patchSettings, managers, addManager, removeMana
           <button onClick={copyLink}><LinkIcon size={15} /> 링크 복사</button>
           <button onClick={copyMsg}><Copy size={15} /> 멘트 복사</button>
         </div>
+      </div>
+
+      {/* 받은 축의금 — 엑셀 업로드로 이름 매칭 기록/비교 */}
+      <div className="card">
+        <div className="metric" style={{ marginBottom: 8 }}>
+          <span className="k" style={{ display: "flex", alignItems: "center", gap: 6 }}><Gift size={16} /> 받은 축의금</span>
+          <span className="serif v">{won(giftTotal)}원</span></div>
+        <div className="small" style={{ marginBottom: 12, lineHeight: 1.6, fontSize: 12.5 }}>
+          {giftGuests.length > 0
+            ? <>{giftGuests.length}명 기록됨 · 명단 {guests.length}명 중 {guests.length - giftGuests.length}명 미기록</>
+            : <>엑셀(이름·축의금 열)을 올리면 하객과 축의금을 매칭해 기록·비교할 수 있어요. 없는 이름은 새 하객으로 추가됩니다.</>}
+        </div>
+        <label className="btn ghost" style={{ cursor: "pointer" }}>
+          <Upload size={16} /> 엑셀로 축의금 올리기
+          <input type="file" accept=".xlsx,.xls,.csv" style={{ display: "none" }} onChange={onExcelFile("gift")} />
+        </label>
+        {giftGuests.length > 0 && (
+          <div style={{ marginTop: 12, maxHeight: 240, overflowY: "auto" }}>
+            {giftGuests.slice().sort((a, b) => (Number(b.gift) || 0) - (Number(a.gift) || 0)).map((g) => (
+              <div key={g.id} className="money" style={{ marginBottom: 8 }}>
+                <span>{g.name}<span className="small" style={{ fontSize: 12, color: col(g.side) }}> · {g.side}</span></span>
+                <span className="serif" style={{ fontSize: 14 }}>{won(g.gift)}원</span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* 공동 관리자 */}
