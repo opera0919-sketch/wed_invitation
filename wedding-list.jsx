@@ -44,14 +44,23 @@ function won(n) { return (Number(n) || 0).toLocaleString("ko-KR"); }
 function today() { return new Date().toISOString().slice(0, 10); }
 function hashStr(s) { let h = 0; for (let i = 0; i < (s || "").length; i++) h = (h << 5) - h + s.charCodeAt(i) | 0; return h; }
 function normName(s) { return (s || "").replace(/\s+/g, ""); }
-// 그룹/기관성 문자열(회사·학교 등)은 동명이인 판별에서 제외
-const GROUP_WORDS = ["증권", "은행", "그룹", "전자", "화재", "생명", "카드", "캐피탈", "텔레콤", "물산", "건설", "중공업", "제약", "반도체", "디스플레이", "병원", "의원", "약국", "교회", "성당", "센터", "학원", "유치원", "어린이집", "회사", "주식회사", "공사", "공단", "재단", "협회", "노조", "동호회", "산악회", "동창회", "모임", "스터디", "지점", "본사", "대학교", "고등학교", "중학교", "초등학교", "부동산", "마트", "카페"];
+// 그룹/기관성 문자열(회사·학교 등) 키워드
+const GROUP_WORDS = ["증권", "은행", "그룹", "전자", "화재", "생명", "카드", "캐피탈", "텔레콤", "물산", "건설", "중공업", "제약", "반도체", "디스플레이", "병원", "의원", "약국", "교회", "성당", "센터", "학원", "유치원", "어린이집", "회사", "주식회사", "공사", "공단", "재단", "협회", "노조", "동호회", "산악회", "동창회", "모임", "스터디", "지점", "본사", "대학교", "대학", "고등학교", "고교", "여고", "남고", "공고", "중학교", "여중", "여대", "초등학교", "동문", "동기", "일동", "부동산", "마트", "카페"];
+// 하객 이름은 "기관명 이름" 형태가 많다(접두사 공백/붙임/없음). 동일인 판별은 이름 부분으로 비교.
+function personKey(name) {
+  const s = (name || "").trim().replace(/\s+/g, " ");
+  if (!s) return "";
+  if (s.includes(" ")) { const p = s.split(" "); return p[p.length - 1]; } // 마지막 토큰 = 이름
+  let cut = -1; // 붙여쓴 기관 접두사: 키워드 끝 뒤가 이름
+  for (const w of GROUP_WORDS) { const i = s.lastIndexOf(w); if (i >= 0) cut = Math.max(cut, i + w.length); }
+  return cut > 0 && cut < s.length ? s.slice(cut) : s;
+}
+// 추출된 이름 key가 순수 기관명이면(사람 아님) 판별에서 제외
 function isGroupLike(name) {
   const s = normName(name);
   if (!s) return false;
   if (GROUP_WORDS.some((w) => s.includes(w))) return true;
   if (/[(（]주[)）]|㈜/.test(s)) return true;
-  if (s.length >= 3 && /(고|중|초|대)$/.test(s)) return true; // 하남고 · 분당중 · 서울대 등
   return false;
 }
 function loadCache() { try { return JSON.parse(localStorage.getItem(CACHE_KEY) || "null"); } catch { return null; } }
@@ -605,10 +614,10 @@ export default function WeddingList() {
   };
   const skipped = (a, b) => settings.skips.indexOf([a, b].sort().join("|")) >= 0;
 
-  // 동일인 후보: 공백 무시 이름이 같은 하객 묶음(그룹/기관성 문자열 제외, 이미 '다른 분' 처리한 조합 제외)
+  // 동일인 후보: 기관 접두사를 뗀 이름 부분이 같은 하객 묶음(순수 기관명 제외, 이미 '다른 분' 처리한 조합 제외)
   const dupGroups = useMemo(() => {
     const map = {};
-    guests.forEach((g) => { const n = normName(g.name); if (!n || isGroupLike(g.name)) return; (map[n] = map[n] || []).push(g); });
+    guests.forEach((g) => { const key = personKey(g.name); if (!key || isGroupLike(key)) return; (map[key] = map[key] || []).push(g); });
     const out = [];
     Object.keys(map).forEach((n) => {
       const arr = map[n]; if (arr.length < 2) return;
@@ -878,7 +887,8 @@ export default function WeddingList() {
     const attending = arr.map((x) => x.attending).find((a) => a && a !== "미정") || "미정";
     const gift = arr.map((x) => x.gift).find(Boolean) || "";
     const method = (arr.find((x) => x.delivered && x.method) || base).method || "대면";
-    const merged = { ...base, side, relation, memo, delivered, deliveredAt, attending, gift, method, deliverer: side === "공동" ? "함께" : (base.deliverer || "함께"), updatedBy: uidMe };
+    const name = arr.map((x) => x.name).sort((a, b) => (b || "").length - (a || "").length)[0]; // 기관 접두사 포함(정보량 많은) 이름 유지
+    const merged = { ...base, name, side, relation, memo, delivered, deliveredAt, attending, gift, method, deliverer: side === "공동" ? "함께" : (base.deliverer || "함께"), updatedBy: uidMe };
     const others = arr.slice(1).map((x) => x.id);
     setGuests((r) => r.filter((x) => others.indexOf(x.id) < 0).map((x) => x.id === base.id ? merged : x));
     const { error } = await supabase.from("wed_guests").delete().in("id", others);
