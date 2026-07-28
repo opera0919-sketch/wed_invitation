@@ -35,6 +35,7 @@ const DEFAULT_SETTINGS = {
   msg: "(멘트는 나중에 채워 넣으세요)", skips: [],
 };
 const CACHE_KEY = "wed_invite_cache_v1";
+const SPLASH_URL = (import.meta.env.BASE_URL || "/") + "splash.jpg";
 
 /* ================= 도구 ================= */
 function col(s) { return s === "신부" ? "var(--bride)" : s === "신랑" ? "var(--groom)" : "var(--both)"; }
@@ -282,6 +283,15 @@ function Seg({ opts, cur, onPick, colored }) {
             onClick={() => onPick(o)}>{o}</button>
         );
       })}
+    </div>
+  );
+}
+
+/* 앱 기동 스플래시 — 첨부 아트를 전체 화면으로 */
+function Splash({ text = "잠시만요…" }) {
+  return (
+    <div style={{ position: "fixed", inset: 0, backgroundColor: "#EDE7DE", backgroundImage: `url(${SPLASH_URL})`, backgroundSize: "cover", backgroundPosition: "center", display: "flex", alignItems: "flex-end", justifyContent: "center", zIndex: 100 }}>
+      <div style={{ marginBottom: "9vh", color: "#6E655C", fontSize: 13, background: "rgba(255,255,255,.55)", backdropFilter: "blur(2px)", padding: "7px 16px", borderRadius: 99 }}>{text}</div>
     </div>
   );
 }
@@ -906,10 +916,10 @@ export default function WeddingList() {
     .sort((a, b) => a.name.localeCompare(b.name, "ko")), [guests, filt, deliv, attFilt, q]);
 
   /* ========================= 렌더 ========================= */
-  if (!authReady) return <><style>{CSS}</style><div className="wl"><div className="center"><span className="small">잠시만요…</span></div></div></>;
+  if (!authReady) return <><style>{CSS}</style><div className="wl"><Splash /></div></>;
   if (!session) return <><style>{CSS}</style><div className="wl"><AuthGate onToast={toast} /></div></>;
   if (access === "no") return <><style>{CSS}</style><div className="wl"><NoAccess email={email} onSignOut={signOut} /></div></>;
-  if (access === "unknown" || !loaded) return <><style>{CSS}</style><div className="wl"><div className="center"><span className="small">불러오는 중…</span></div></div></>;
+  if (access === "unknown" || !loaded) return <><style>{CSS}</style><div className="wl"><Splash text="불러오는 중…" /></div></>;
 
   return (
     <><style>{CSS}</style><div className={"wl" + (tab === "guests" || tab === "meetings" ? " fixedscreen" : "")}>
