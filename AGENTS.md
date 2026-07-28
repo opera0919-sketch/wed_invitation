@@ -32,6 +32,7 @@
 ## 디자인
 - 캐주얼 톤: 본문 **Pretendard**, 제목/숫자 **Jua**(둥근 글꼴). 중립 배경(#F5F5F5) + 흰 카드 + 부드러운 색(신부 로지핑크/신랑 페리윙클/공동 골드). 폰트는 `web/index.html`에서 CDN 로드.
 - 카카오톡 친구 API 는 개인용으로 사용 불가(비즈앱 심사 + 상호 인증 필요)라 채택하지 않음. 대신 웹 표준 Contact Picker API 사용.
+- **앱 아이콘/스플래시:** 아치·잎사귀 골드 엠블럼. 아이콘은 다크 차콜(`web/public/icon-192.png`·`icon-512.png`), 앱 기동 스플래시는 크림 아트(`web/public/splash.jpg`) — 기동/로딩 화면 전체에 표시(`Splash` 컴포넌트). 매니페스트 `background_color`는 크림(#EDE7DE).
 
 ## 작업 규칙
 1. "사용자가 보는 화면/웹" 요구는 **`wedding-list.jsx`에서** 작업한다.
