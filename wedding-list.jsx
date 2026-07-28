@@ -43,6 +43,17 @@ function uid() { return (crypto?.randomUUID ? crypto.randomUUID() : "x" + Math.r
 function won(n) { return (Number(n) || 0).toLocaleString("ko-KR"); }
 function today() { return new Date().toISOString().slice(0, 10); }
 function hashStr(s) { let h = 0; for (let i = 0; i < (s || "").length; i++) h = (h << 5) - h + s.charCodeAt(i) | 0; return h; }
+function normName(s) { return (s || "").replace(/\s+/g, ""); }
+// 그룹/기관성 문자열(회사·학교 등)은 동명이인 판별에서 제외
+const GROUP_WORDS = ["증권", "은행", "그룹", "전자", "화재", "생명", "카드", "캐피탈", "텔레콤", "물산", "건설", "중공업", "제약", "반도체", "디스플레이", "병원", "의원", "약국", "교회", "성당", "센터", "학원", "유치원", "어린이집", "회사", "주식회사", "공사", "공단", "재단", "협회", "노조", "동호회", "산악회", "동창회", "모임", "스터디", "지점", "본사", "대학교", "고등학교", "중학교", "초등학교", "부동산", "마트", "카페"];
+function isGroupLike(name) {
+  const s = normName(name);
+  if (!s) return false;
+  if (GROUP_WORDS.some((w) => s.includes(w))) return true;
+  if (/[(（]주[)）]|㈜/.test(s)) return true;
+  if (s.length >= 3 && /(고|중|초|대)$/.test(s)) return true; // 하남고 · 분당중 · 서울대 등
+  return false;
+}
 function loadCache() { try { return JSON.parse(localStorage.getItem(CACHE_KEY) || "null"); } catch { return null; } }
 function saveCache(o) { try { localStorage.setItem(CACHE_KEY, JSON.stringify(o)); } catch {} }
 
@@ -437,7 +448,6 @@ export default function WeddingList() {
   const [gMore, setGMore] = useState(false);
   const [mDraft, setMDraft] = useState(null);
   const [exDraft, setExDraft] = useState({ label: "", amount: "", payer: "신부", category: "식대" });
-  const [overlap, setOverlap] = useState(null); // {existing, again}
   const [wipeAsk, setWipeAsk] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
   const [needProfile, setNeedProfile] = useState(false);
@@ -594,6 +604,20 @@ export default function WeddingList() {
     const out = Object.keys(s); return out.length ? out : ["신부", "신랑"];
   };
   const skipped = (a, b) => settings.skips.indexOf([a, b].sort().join("|")) >= 0;
+
+  // 동일인 후보: 공백 무시 이름이 같은 하객 묶음(그룹/기관성 문자열 제외, 이미 '다른 분' 처리한 조합 제외)
+  const dupGroups = useMemo(() => {
+    const map = {};
+    guests.forEach((g) => { const n = normName(g.name); if (!n || isGroupLike(g.name)) return; (map[n] = map[n] || []).push(g); });
+    const out = [];
+    Object.keys(map).forEach((n) => {
+      const arr = map[n]; if (arr.length < 2) return;
+      let unresolved = false;
+      for (let i = 0; i < arr.length && !unresolved; i++) for (let j = i + 1; j < arr.length; j++) if (!skipped(arr[i].id, arr[j].id)) { unresolved = true; break; }
+      if (unresolved) out.push(arr);
+    });
+    return out;
+  }, [guests, settings.skips]);
 
   // 조치가 필요한 하객: 완료된 모임에 참석했는데 참석여부가 아직 '미정'
   const actionNeeded = useMemo(() => {
@@ -821,10 +845,8 @@ export default function WeddingList() {
 
   /* ── 하객 저장 (겹지인 확인 포함) ── */
   const attemptSaveGuest = (again) => {
-    const g = gDraft;
-    if (!g.name.trim()) { toast("이름을 넣어 주세요"); return; }
-    const clash = guests.find((x) => x.name.trim() === g.name.trim() && x.id !== g.id && x.side !== g.side && !skipped(x.id, g.id));
-    if (clash) { setOverlap({ existing: clash, again: !!again }); return; }
+    // 등록은 제한 없이 — 동일인 판별은 저장 후 홈 '동일인 확인' 섹션에서 처리
+    if (!gDraft.name.trim()) { toast("이름을 넣어 주세요"); return; }
     commitGuest(!!again);
   };
   const commitGuest = async (again) => {
@@ -843,21 +865,35 @@ export default function WeddingList() {
     const { error } = await supabase.from("wed_guests").delete().eq("id", id);
     if (error) toast("삭제에 실패했어요"); else toast("명단에서 뺐습니다");
   };
-  const mergeBoth = async () => {
-    const e = overlap.existing, again = overlap.again, g = gDraft;
-    const merged = { ...e, ...g, id: e.id, side: "공동", deliverer: "함께", relation: g.relation || e.relation, memo: [e.memo, g.memo].filter(Boolean).join(" / "), delivered: e.delivered || g.delivered, deliveredAt: e.deliveredAt || g.deliveredAt || "", updatedBy: uidMe };
-    setGuests((r) => r.filter((x) => x.id !== g.id).map((x) => x.id === e.id ? merged : x));
-    await supabase.from("wed_guests").delete().eq("id", g.id);
-    await persistGuest(merged);
-    setOverlap(null);
-    if (again) { setGDraft({ id: uid(), name: "", side: "공동", relation: "", delivered: false, method: "대면", deliverer: "함께", attending: "미정", memo: "", createdBy: uidMe, updatedBy: uidMe }); setGMore(false); }
-    else setGDraft(null);
-    toast("공동 하객으로 합쳤습니다");
+  // 동일인 확인 — 같은 분: 한 명으로 합치기
+  const mergeGroup = async (arr) => {
+    if (!arr || arr.length < 2) return;
+    const base = arr[0];
+    const sides = Array.from(new Set(arr.map((x) => x.side)));
+    const side = sides.length === 1 ? base.side : "공동";
+    const memo = Array.from(new Set(arr.map((x) => (x.memo || "").trim()).filter(Boolean))).join(" / ");
+    const relation = (arr.find((x) => x.relation) || {}).relation || "";
+    const delivered = arr.some((x) => x.delivered);
+    const deliveredAt = arr.map((x) => x.deliveredAt).filter(Boolean).sort()[0] || "";
+    const attending = arr.map((x) => x.attending).find((a) => a && a !== "미정") || "미정";
+    const gift = arr.map((x) => x.gift).find(Boolean) || "";
+    const method = (arr.find((x) => x.delivered && x.method) || base).method || "대면";
+    const merged = { ...base, side, relation, memo, delivered, deliveredAt, attending, gift, method, deliverer: side === "공동" ? "함께" : (base.deliverer || "함께"), updatedBy: uidMe };
+    const others = arr.slice(1).map((x) => x.id);
+    setGuests((r) => r.filter((x) => others.indexOf(x.id) < 0).map((x) => x.id === base.id ? merged : x));
+    const { error } = await supabase.from("wed_guests").delete().in("id", others);
+    if (!error) await persistGuest(merged);
+    toast(error ? "합치기에 실패했어요" : `${arr.length}명을 한 분으로 합쳤어요`);
   };
-  const keepApart = () => {
-    const k = [overlap.existing.id, gDraft.id].sort().join("|");
-    if (settings.skips.indexOf(k) < 0) patchSettings({ skips: [...settings.skips, k] });
-    const again = overlap.again; setOverlap(null); commitGuest(again);
+  // 동일인 확인 — 다른 분: 다시 묻지 않도록 조합 기록
+  const skipGroup = async (arr) => {
+    const keys = [];
+    for (let i = 0; i < arr.length; i++) for (let j = i + 1; j < arr.length; j++) {
+      const k = [arr[i].id, arr[j].id].sort().join("|");
+      if (settings.skips.indexOf(k) < 0 && keys.indexOf(k) < 0) keys.push(k);
+    }
+    if (keys.length) await patchSettings({ skips: [...settings.skips, ...keys] });
+    toast("다른 분으로 표시했어요");
   };
 
   /* ── 모임 저장 ── */
@@ -936,7 +972,7 @@ export default function WeddingList() {
       </header>
 
       <main className={tab === "guests" || tab === "meetings" ? "scrollmain" : undefined}>
-        {tab === "home" && <HomeTab {...{ overall, calc, totalBudget, dday, nextMeeting, actionNeeded, setAttending, guests, mstatus, go: setTab, openMeeting }} />}
+        {tab === "home" && <HomeTab {...{ overall, calc, totalBudget, dday, nextMeeting, actionNeeded, setAttending, dupGroups, mergeGroup, skipGroup, guests, mstatus, go: setTab, openMeeting }} />}
         {tab === "guests" && <GuestsTab {...{ stats, paper, q, setQ, filt, setFilt, deliv, setDeliv, attFilt, setAttFilt, visible, tick, openGuest, guests, selectMode, setSelectMode, selected, toggleSelect, exitSelect, contactsSupported, pickContacts, groupBy, setGroupBy, collapsed, toggleCollapse, csv, onExcelFile }} />}
         {tab === "meetings" && <MeetingsTab {...{ meetings, calc, totalBudget, guests, mstatus, openMeeting, today }} />}
         {tab === "settings" && <SettingsTab {...{ settings, patchSettings, managers, addManager, removeManager, email, setWipeAsk, copyLink, copyMsg, guests, onExcelFile }} />}
@@ -971,7 +1007,6 @@ export default function WeddingList() {
 
       {gDraft && <GuestSheet {...{ gDraft, setGDraft, gMore, setGMore, relations, guests, attemptSaveGuest, delGuest }} />}
       {mDraft && <MeetingSheet {...{ mDraft, setMDraft, exDraft, setExDraft, guests, meetings, sidesIn, mstatus, saveMeeting, delMeeting, createGuestQuick }} />}
-      {overlap && <OverlapModal {...{ overlap, mergeBoth, keepApart }} />}
       {wipeAsk && (
         <div className="modal"><div className="box">
           <h3 className="serif">전체를 지울까요?</h3>
@@ -992,7 +1027,7 @@ export default function WeddingList() {
 /* =============================================================================
  *  홈 (대시보드)
  * ========================================================================== */
-function HomeTab({ overall, calc, totalBudget, dday, nextMeeting, actionNeeded, setAttending, guests, mstatus, go, openMeeting }) {
+function HomeTab({ overall, calc, totalBudget, dday, nextMeeting, actionNeeded, setAttending, dupGroups, mergeGroup, skipGroup, guests, mstatus, go, openMeeting }) {
   const spent = calc.total;
   const bpct = totalBudget ? Math.min(100, Math.round(spent / totalBudget * 100)) : 0;
   const over = totalBudget && spent > totalBudget;
@@ -1021,6 +1056,31 @@ function HomeTab({ overall, calc, totalBudget, dday, nextMeeting, actionNeeded, 
                   <button className="y" onClick={() => setAttending(g.id, "참석")}>참석</button>
                   <button onClick={() => setAttending(g.id, "불참")}>불참</button>
                 </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* 동일인 확인 — 공백 무시 이름이 같은 하객 (그룹/기관성 문자열 제외) */}
+      {dupGroups.length > 0 && (
+        <div className="card">
+          <div className="metric" style={{ marginBottom: 6 }}>
+            <span className="k" style={{ display: "flex", alignItems: "center", gap: 6 }}><Users size={16} /> 동일인 확인</span>
+            <span className="small">{dupGroups.length}건</span></div>
+          <p className="small" style={{ margin: "0 0 8px", fontSize: 12.5, lineHeight: 1.5 }}>이름이 같은(공백 무시) 하객이 있어요. 같은 분이면 하나로 합쳐 주세요.</p>
+          <div style={{ maxHeight: 280, overflowY: "auto", margin: "0 -4px", padding: "0 4px" }}>
+            {dupGroups.map((arr, i) => (
+              <div key={i} style={{ padding: "10px 0", borderTop: i ? "1px solid var(--line)" : "none" }}>
+                <div style={{ marginBottom: 8 }}>
+                  {arr.map((g) => (
+                    <span className="attchip" key={g.id}>{g.name.trim()}<span style={{ color: col(g.side), fontSize: 12 }}> · {g.side}{g.relation ? " · " + g.relation : ""}</span></span>
+                  ))}
+                </div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button className="btn" style={{ flex: 1, width: "auto", marginTop: 0, padding: 11, background: "var(--both)" }} onClick={() => mergeGroup(arr)}>같은 분 · 합치기</button>
+                  <button className="btn ghost" style={{ flex: 1, width: "auto", marginTop: 0, padding: 11 }} onClick={() => skipGroup(arr)}>다른 분</button>
+                </div>
               </div>
             ))}
           </div>
@@ -1552,21 +1612,6 @@ function MeetingSheet({ mDraft, setMDraft, exDraft, setExDraft, guests, meetings
         </div>
       </div>
     </div>
-  );
-}
-
-/* =============================================================================
- *  겹지인 모달
- * ========================================================================== */
-function OverlapModal({ overlap, mergeBoth, keepApart }) {
-  const e = overlap.existing;
-  return (
-    <div className="modal"><div className="box">
-      <h3 className="serif">겹지인인가요?</h3>
-      <p><b style={{ color: "var(--ink)" }}>{e.name}</b>님은 이미 <b style={{ color: col(e.side) }}>{e.side}</b> 명단에 있습니다{e.relation ? ` (${e.relation})` : ""}.<br />같은 분이면 한 줄로 합치고 공동 하객으로 바꿉니다.</p>
-      <button className="btn" style={{ background: "var(--both)" }} onClick={mergeBoth}>같은 분입니다 · 공동으로 합치기</button>
-      <button className="btn ghost" style={{ marginTop: 8 }} onClick={keepApart}>다른 분입니다 · 따로 두기</button>
-    </div></div>
   );
 }
 
