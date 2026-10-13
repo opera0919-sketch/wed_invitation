@@ -50,4 +50,5 @@
   - `trip_app_export()` 전체 일정·예약·식당·메모·가이드·코스 가이드(`guides`)·챙길 것 체크(`checks`), `trip_memo_save/remove/restore`(메모는 소프트 삭제), `trip_dining_pick`, `trip_todo_set`, `trip_day_check`(오늘 챙길 것 체크), `trip_item_status`(일정 예정·완료·건너뜀, 건너뜀은 길찾기 동선에서 제외), `trip_place_coords`(좌표 없는 장소만, OSM Nominatim 결과 저장).
   - 코스 가이드: `trip.guides`(장소 또는 일정 단위 짧은 아티클) → 일정 상세 시트에 표시.
 - 지도: 앱 자체 '동선' 지도 하나로 통일(Leaflet + CARTO 타일, OSM 데이터). 구글 지도는 장소 상세의 키 없는 `maps.google.com/maps?...&output=embed` iframe과 `google.com/maps/dir/?api=1` 링크(경유지 최대 8개씩 분할).
+- **PWA 범위 주의:** `/honeymoon/`은 청첩장 앱 PWA 범위(`/wed_invitation/`) 안이라, 청첩장 앱 창에서 열리면 그 앱이 신혼여행 화면으로 남을 수 있다. 그래서 `honeymoon/index.html` 첫 스크립트가 독립 실행 상태이면서 전용 시작 주소(`?app=hm`)가 아니면 `../`로 되돌린다. 신혼여행 자체 매니페스트는 `honeymoon/manifest.webmanifest`(start_url `./?app=hm`).
 - `embed-test.html`은 구글 지도 iframe 동작 확인용 페이지(개인정보 없음).
