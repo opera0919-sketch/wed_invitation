@@ -102,10 +102,6 @@ main{max-width:720px;margin:0 auto;padding:0 0 calc(var(--tabh) + env(safe-area-
 .map-tools{position:absolute;left:10px;right:10px;bottom:10px;z-index:500;display:flex;gap:8px;align-items:flex-end;pointer-events:none}
 .map-tools > *{pointer-events:auto}
 .map-tools .btn{box-shadow:var(--shadow);border-color:transparent}
-.map-mode{position:absolute;top:10px;left:10px;z-index:500;display:flex;background:var(--paper);border-radius:12px;box-shadow:var(--shadow);padding:3px}
-.map-mode button{border:0;background:none;border-radius:9px;padding:6px 11px;font-size:13px;font-weight:600;color:var(--ink2)}
-.map-mode button[aria-pressed="true"]{background:var(--city);color:var(--on-city)}
-.gframe{position:absolute;inset:0;border:0;width:100%;height:100%}
 .pin{width:30px;height:30px;border-radius:50%;background:var(--paper);border:3px solid var(--k,var(--city));color:var(--ink);display:grid;place-items:center;font-size:13px;font-weight:800;box-shadow:0 2px 6px rgba(0,0,0,.25)}
 .pin.done{opacity:.55}
 .pin.now{background:var(--k,var(--city));color:#fff;width:38px;height:38px;font-size:15px;box-shadow:0 0 0 6px color-mix(in srgb,var(--k,var(--city)) 28%,transparent),0 2px 8px rgba(0,0,0,.3)}
@@ -280,3 +276,21 @@ nav.tabs button[aria-selected="true"]{color:var(--city)}
 .offline{margin:10px 16px 0;padding:9px 12px;border-radius:12px;background:var(--warn-bg);color:var(--warn);font-size:13px;font-weight:600}
 @media (prefers-reduced-motion: reduce){ .sheet,.scrim{transition:none} }
 @media (min-width:760px){ .mapcard{height:440px} }
+/* 오늘 챙길 것: 오른쪽 체크박스 */
+.chk{display:flex;gap:12px;align-items:center;padding:11px 0;border-top:1px solid var(--line);cursor:pointer}
+.chk:first-child{border-top:0;padding-top:2px}.chk:last-child{padding-bottom:2px}
+.chk .tx{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.chk .tx b{font-size:14px;font-weight:700}.chk .tx span{font-size:13px;color:var(--ink2)}
+.chk input{width:24px;height:24px;margin:0;accent-color:var(--city);flex-shrink:0}
+.chk.done .tx{opacity:.55}.chk.done .tx b{text-decoration:line-through}
+/* 코스 가이드 아티클 */
+.guide{margin-top:18px;padding:16px 16px 14px;border-radius:16px;background:color-mix(in srgb,var(--city) 6%,var(--paper));border:1px solid color-mix(in srgb,var(--city) 18%,var(--line))}
+.guide .kicker{font-size:11.5px;font-weight:700;letter-spacing:.08em;color:var(--city)}
+.guide .lead{margin:4px 0 0;font-family:var(--serif);font-size:19px;line-height:1.4;font-weight:700;text-wrap:balance}
+.guide .story{margin:10px 0 0;font-size:14.5px;line-height:1.7;color:var(--ink)}
+.guide h4{margin:14px 0 6px;font-size:13px;font-weight:700;color:var(--ink2)}
+.guide ul{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:5px;font-size:14px;line-height:1.55}
+.guide ul.tips{list-style:none;padding-left:0}
+.guide ul.tips li{position:relative;padding-left:20px}
+.guide ul.tips li::before{content:"";position:absolute;left:3px;top:.55em;width:8px;height:8px;border-radius:50%;background:var(--warn)}
+.guide .links{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}
