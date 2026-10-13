@@ -96,6 +96,7 @@ function dayStops(day) {
     ds.push({ pid: key, lat: +it.lat, lng: +it.lng, name: it.pll || it.pl || it.ti, label: it.pl || it.ti, items: [it], cat: it.cat, t: it.t });
     seen.add(key);
   });
+  ds.forEach(x => { x.skip = x.items.every(i => i.st === "skipped"); x.done = !x.skip && x.items.every(i => i.st === "done" || i.st === "skipped"); });
   return ds;
 }
 function localCluster(stops) {
@@ -192,11 +193,12 @@ function drawMap() {
   const stops = dayStops(day); const t = now(); const live = isLive(day);
   const color = getComputedStyle(document.documentElement).getPropertyValue("--city").trim();
   const cityColor = getComputedStyle(document.documentElement).getPropertyValue(CITY_VAR[day.city]?.slice(4, -1) || "--paris").trim() || color;
-  if (stops.length > 1) L.polyline(stops.map(s => [s.lat, s.lng]), { color: cityColor, weight: 4, opacity: .75, dashArray: "1 8", lineCap: "round" }).addTo(layer);
+  const routeStops = stops.filter(s => !s.skip);
+  if (routeStops.length > 1) L.polyline(routeStops.map(s => [s.lat, s.lng]), { color: cityColor, weight: 4, opacity: .75, dashArray: "1 8", lineCap: "round" }).addTo(layer);
   stops.forEach((s, i) => {
-    const it = s.items[0]; const isNow = live && s.items.some(x => x.s <= t && t < (x.e ?? x.s)); const isPast = live && s.items.every(x => (x.e ?? x.s) < t);
+    const it = s.items[0]; const isNow = live && s.items.some(x => x.s <= t && t < (x.e ?? x.s)); const isPast = s.done || live && s.items.every(x => (x.e ?? x.s) < t);
     const hotel = s.cat === "hotel"; const k = TYPE[it.t]?.[1] === "var(--city)" ? cityColor : getVar(TYPE[it.t]?.[1]);
-    const icon = L.divIcon({ className: "", html: `<div class="pin ${hotel ? "hotel" : ""} ${isNow ? "now" : ""} ${isPast ? "done" : ""}" style="--k:${k}">${hotel ? "숙" : i + 1}</div>`, iconSize: isNow ? [38, 38] : [30, 30], iconAnchor: isNow ? [19, 19] : [15, 15] });
+    const icon = L.divIcon({ className: "", html: `<div class="pin ${hotel ? "hotel" : ""} ${isNow ? "now" : ""} ${isPast ? "done" : ""} ${s.skip ? "skip" : ""}" style="--k:${k}">${hotel ? "숙" : i + 1}</div>`, iconSize: isNow ? [38, 38] : [30, 30], iconAnchor: isNow ? [19, 19] : [15, 15] });
     const m = L.marker([s.lat, s.lng], { icon, title: s.label, zIndexOffset: isNow ? 1000 : 0 }).addTo(layer);
     m.on("click", () => openItem(it.id));
     s.items.forEach(x => markerById[x.id] = m);
@@ -242,7 +244,7 @@ function stripHTML(day, live) {
   return h + `</div><div class="axis">${[6, 9, 12, 15, 18, 21, 24].map(x => `<span style="left:${(x - H0) / (H1 - H0) * 100}%">${x}시</span>`).join("")}</div>`;
 }
 function mapCard(day) {
-  const stops = localCluster(dayStops(day)); const urls = gDirUrls(stops, S.travelMode);
+  const stops = localCluster(dayStops(day).filter(s => !s.skip)); const urls = gDirUrls(stops, S.travelMode);
   return `<div class="mapcard">
     <div id="map-slot" style="position:absolute;inset:0"></div>
     <div class="map-tools">${urls.length ? urls.map((u, i) => `<a class="btn primary sm" href="${esc(u)}" target="_blank" rel="noopener">${SVG.route}${urls.length > 1 ? `동선 ${i + 1}/${urls.length}` : "구글 지도로 동선 열기"}</a>`).join("") : ""}
@@ -256,15 +258,15 @@ function timeline(day, live) {
   items.forEach(it => {
     if (!ssShown && it.s > ss) { out += sunLine(ss, day.tz); ssShown = true; }
     if (prevEnd != null && it.s - prevEnd >= 1800) out += `<div class="gap">${dur(it.s - prevEnd)} 여유</div>`;
-    const k = TYPE[it.t]?.[1] || "var(--free)"; const isNow = live && it.s <= t && t < (it.e ?? it.s); const isPast = live && (it.e ?? it.s) < t;
+    const k = TYPE[it.t]?.[1] || "var(--free)"; const isNow = live && it.s <= t && t < (it.e ?? it.s); const isPast = it.st === "done" || live && (it.e ?? it.s) < t; const isSkip = it.st === "skipped";
     const bks = (it.b || []).map(booking).filter(Boolean); const tg = itemTags(it); const mc = memosFor(it).length;
-    const tags = [pill(TYPE[it.t]?.[0] || it.t, "p-mute")].concat(bks.filter(b => b.status !== "confirmed").map(b => pill(BSTAT[b.status][0], BSTAT[b.status][1])))
+    const tags = (it.st === "done" ? [pill("완료", "p-ok")] : isSkip ? [pill("건너뜀", "p-mute")] : []).concat([pill(TYPE[it.t]?.[0] || it.t, "p-mute")]).concat(bks.filter(b => b.status !== "confirmed").map(b => pill(BSTAT[b.status][0], BSTAT[b.status][1])))
       .concat(bks.some(b => b.status === "confirmed") ? [pill("예약 확정", "p-ok")] : [])
       .concat(tg.some(x => x.k === "pick") ? [pill("소매치기 주의", "p-warn")] : []).concat(tg.some(x => x.k === "rain") ? [pill("비 올 때 대안", "p-city")] : [])
       .concat(mc ? [pill(`메모 ${mc}`, "p-city")] : []).join("");
     const endTz = it.etz || it.tz; const endTxt = it.e != null ? hm(it.e, endTz) + (ymd(it.e, endTz) !== ymd(it.s, it.tz) ? "+1" : "") : "";
     const num = numOf[it.id];
-    out += `<div class="stop ${num ? "" : "dot"} ${isNow ? "now" : ""} ${isPast ? "past" : ""}" style="--k:${k}">
+    out += `<div class="stop ${num ? "" : "dot"} ${isNow && !isSkip ? "now" : ""} ${isPast ? "past" : ""} ${isSkip ? "skip" : ""}" style="--k:${k}">
       <div class="tm"><b>${hm(it.s, it.tz)}</b><small>${endTxt}${it.etz && it.etz !== it.tz ? " 현지" : ""}</small></div>
       <div class="rail"><span class="num">${num ?? ""}</span></div>
       <div class="body"><button class="row-btn" data-item="${it.id}"><span class="tx"><b>${esc(it.ti)}</b>${it.pl && it.pl !== it.ti ? `<span>${esc(it.pl)}${it.pll ? " · " + esc(it.pll) : ""}</span>` : (it.pll ? `<span>${esc(it.pll)}</span>` : "")}<span class="tags">${tags}</span></span><span class="chev">${SVG.chev}</span></button></div></div>`;
@@ -275,6 +277,18 @@ function timeline(day, live) {
 }
 const sunLine = (ss, tz) => `<div class="sunline"><span class="tm">${hm(ss, tz)}</span><span class="rail"><i></i></span><span style="display:flex;gap:8px;align-items:center">일몰<span class="ln" style="flex:1"></span></span></div>`;
 
+/* 하루 진행 점: 지도 핀 번호와 같은 번호 */
+function dayDots(day, t) {
+  const st = dayStops(day); if (st.length < 2) return "";
+  const end = s => Math.max(...s.items.map(x => x.e ?? x.s)), start = s => Math.min(...s.items.map(x => x.s));
+  let ci = st.findIndex(s => s.items.some(x => x.s <= t && t < (x.e ?? x.s)));
+  if (ci < 0) ci = st.findIndex(s => start(s) > t);
+  const spots = st.filter(s => s.cat !== "hotel"); const curSpot = ci >= 0 ? st.slice(0, ci + 1).filter(s => s.cat !== "hotel").length : spots.length;
+  const dots = st.map((s, i) => { const past = s.done || end(s) < t && i !== ci; const cls = s.skip ? "skip" : i === ci ? "cur" : past ? "past" : "";
+    return `<i class="${cls}" title="${esc(s.label)}">${s.cat === "hotel" ? "숙" : i + 1}</i>`; }).join("<b></b>");
+  const done = spots.filter(s => s.done || end(s) < t).length;
+  return `<div class="dots-h"><span>오늘 동선 ${Math.min(curSpot, spots.length)} / ${spots.length}</span><span>${done}곳 지남</span></div><div class="dots" aria-hidden="true">${dots}</div>`;
+}
 /* ── 오늘 ── */
 function viewToday() {
   const ph = phase(), t = now(); const day = selDay(); setCity(day); const live = isLive(day);
@@ -284,9 +298,9 @@ function viewToday() {
       <div class="acts"><button class="btn sm" data-sim-open>여행 중 화면 미리보기</button></div></section>`; }
   else if (ph === "after" && !S.sim) hero = `<section class="now"><span class="lbl">여행 완료</span><h2>13일 동안 수고하셨습니다</h2></section>`;
   else {
-    const prog = cur ? Math.min(100, Math.max(0, (t - cur.s) / Math.max(1, (cur.e ?? cur.s + 1) - cur.s) * 100)) : 0;
     hero = `<section class="now"><span class="lbl">${cur ? "지금" : "다음 일정까지 여유 시간"}</span>
-      ${cur ? `<h2>${esc(cur.ti)}</h2><span class="sub">${hm(cur.s, cur.tz)}–${hm(cur.e, cur.etz || cur.tz)}${cur.pl && cur.pl !== cur.ti ? " · " + esc(cur.pl) : ""}</span><div class="bar"><i style="width:${prog}%"></i></div>` : `<h2>${nxt ? esc(nxt.ti) + " 준비" : "오늘 일정을 마쳤습니다"}</h2>`}
+      ${cur ? `<h2>${esc(cur.ti)}</h2><span class="sub">${hm(cur.s, cur.tz)}–${hm(cur.e, cur.etz || cur.tz)}${cur.pl && cur.pl !== cur.ti ? " · " + esc(cur.pl) : ""}</span>` : `<h2>${nxt ? esc(nxt.ti) + " 준비" : "오늘 일정을 마쳤습니다"}</h2>`}
+      ${dayDots(day, t)}
       ${nxt ? `<div class="next"><div class="t"><span class="sub">다음 · ${hm(nxt.s, nxt.tz)}</span><b>${esc(nxt.ti)}</b></div><div class="count"><b>${dur(nxt.s - t)}</b><span>뒤</span></div></div>
         <div class="acts">${nxt.lat != null || nxt.pl ? `<a class="btn sm" href="${esc(gNavUrl(nxt))}" target="_blank" rel="noopener">${SVG.nav}다음 장소 길찾기</a>` : ""}<button class="btn sm" data-item="${nxt.id}">자세히</button></div>` : ""}
       ${S.sim ? `<div class="acts"><button class="btn sm" data-sim-off>미리보기 끝내기</button></div>` : ""}</section>`;
@@ -441,6 +455,7 @@ function openItem(id) {
   showSheet(`<h3>${esc(it.ti)}</h3><div class="sub">${mdShort(it.day.date)} ${hm(it.s, it.tz)}${it.e ? "–" + hm(it.e, it.etz || it.tz) : ""}${it.pl && it.pl !== it.ti ? " · " + esc(it.pl) : ""}</div>
     ${it.pl || it.lat != null ? `<div class="gmap"><iframe src="${esc(gEmbedPlace(it))}" loading="lazy" referrerpolicy="no-referrer-when-downgrade" title="구글 지도: ${esc(it.pl || it.ti)}"></iframe></div>
     <div class="acts"><a class="btn primary" href="${esc(gNavUrl(it))}" target="_blank" rel="noopener">${SVG.nav}길찾기</a><a class="btn" href="${esc(gPlaceUrl(it))}" target="_blank" rel="noopener">${SVG.map}구글 지도 앱</a></div>` : ""}
+    <div class="block"><div class="seg-ctl st-ctl" role="group" aria-label="일정 상태">${[["planned", "예정"], ["done", "완료"], ["skipped", "건너뜀"]].map(([k, l]) => `<button data-st="${it.id}:${k}" aria-pressed="${(it.st || "planned") === k}">${l}</button>`).join("")}</div></div>
     ${it.no ? `<div class="block"><div class="note">${esc(it.no)}</div></div>` : ""}
     ${guideHTML(guideFor(it))}
     ${bks.length ? `<div class="block"><h4>예약</h4>${bks.map(b => `<div class="card" style="box-shadow:none;background:var(--sunk);padding:12px"><div style="display:flex;gap:8px"><b style="flex:1">${esc(b.title)}</b>${pill(BSTAT[b.status][0], BSTAT[b.status][1])}</div>${kv(b)}</div>`).join("")}</div>` : ""}
@@ -516,6 +531,13 @@ async function saveCheck(dayId, infoId, done) {
   try { await rpc("trip_day_check", { p_day_id: dayId, p_info_id: infoId, p_done: done }); }
   catch (e) { toast("저장하지 못했습니다. 연결을 확인해 주세요"); load(true); }
 }
+async function saveStatus(id, st) {
+  const it = allItems().find(x => x.id === id); if (!it || it.st === st) return; const prev = it.st || "planned";
+  const raw = days().flatMap(d => d.items || []).find(x => x.id === id); raw.st = st; ls.set(CACHE_KEY, S.data); render(); openItem(id);
+  toast(st === "done" ? "완료로 표시했습니다" : st === "skipped" ? "건너뜀으로 표시했습니다. 길찾기 동선에서 빠집니다" : "예정으로 되돌렸습니다");
+  try { await rpc("trip_item_status", { p_id: id, p_status: st }); }
+  catch (e) { raw.st = prev; ls.set(CACHE_KEY, S.data); render(); if (S.sheet?.id === id) openItem(id); toast("저장하지 못했습니다. 연결을 확인해 주세요"); }
+}
 async function saveTodo(id, done) {
   const td = D().todos.find(t => t.id === id); const prev = td.done; td.done = done; render();
   try { await rpc("trip_todo_set", { p_id: id, p_done: done }); ls.set(CACHE_KEY, S.data); } catch (e) { td.done = prev; render(); toast("저장하지 못했습니다"); }
@@ -536,13 +558,14 @@ async function removeMemo(id) {
 
 /* ── 이벤트 ── */
 document.addEventListener("click", async e => {
-  const el = e.target.closest("[data-tab],[data-day],[data-item],[data-step],[data-dinef],[data-pick],[data-dine],[data-copy],[data-goto],[data-phrase],[data-info],[data-travel],[data-memof],[data-memo-edit],[data-memo-del],[data-memo-cancel],[data-reload],[data-logout],[data-sim-open],[data-sim-off]");
+  const el = e.target.closest("[data-tab],[data-day],[data-item],[data-step],[data-dinef],[data-pick],[data-dine],[data-copy],[data-goto],[data-phrase],[data-info],[data-travel],[data-memof],[data-memo-edit],[data-memo-del],[data-memo-cancel],[data-reload],[data-logout],[data-sim-open],[data-sim-off],[data-st]");
   if (!el) return;
   const ds = el.dataset;
   if (ds.tab) { S.tab = ds.tab; closeSheet(); render(); window.scrollTo(0, 0); return; }
   if (ds.goto) { S.tab = ds.goto; if (ds.goto === "dine") S.dineFilter = "day"; render(); window.scrollTo(0, 0); return; }
   if (ds.day != null) { S.sel = +ds.day; if (S.tab === "today" && phase() === "during" && !S.sim) S.tab = "plan"; closeSheet(); render(); return; }
   if (ds.step) { S.sel = Math.min(days().length - 1, Math.max(0, S.sel + +ds.step)); render(); window.scrollTo(0, 0); return; }
+  if (ds.st) { const [i, st] = ds.st.split(":"); saveStatus(+i, st); return; }
   if (ds.item) { openItem(+ds.item); return; }
   if (ds.dinef) { S.dineFilter = ds.dinef; render(); return; }
   if (ds.dine) { const [a, b] = ds.dine.split(":").map(Number); openDine(a, b); return; }

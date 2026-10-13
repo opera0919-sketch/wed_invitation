@@ -164,3 +164,15 @@ end $$;
 revoke all on function public.trip_day_check(bigint,bigint,boolean) from public, anon;
 grant execute on function public.trip_day_check(bigint,bigint,boolean) to authenticated;
 -- trip_app_export() 는 'guides'(키: p<place_id> / i<item_id>)와 'checks'(day, info) 를 함께 반환한다.
+
+-- 일정 상태 표시(예정/완료/건너뜀) — itinerary_items.status 갱신
+create or replace function public.trip_item_status(p_id bigint, p_status text)
+returns boolean language plpgsql security definer set search_path to '' as $$
+begin
+  if not public.wed_is_manager() then raise exception 'not_allowed' using errcode='42501'; end if;
+  if p_status not in ('planned','done','skipped') then raise exception 'bad_status' using errcode='22023'; end if;
+  update trip.itinerary_items set status=p_status, updated_at=now() where id=p_id;
+  return found;
+end $$;
+revoke all on function public.trip_item_status(bigint,text) from public, anon;
+grant execute on function public.trip_item_status(bigint,text) to authenticated;
