@@ -39,7 +39,7 @@ const WD = ["일", "월", "화", "수", "목", "금", "토"];
 
 const S = {
   data: null, source: "", user: null, tab: "today", sel: null, sim: null, simKey: "",
-  mapMode: "route", infoTab: "book", dineFilter: "all", memoFilter: "all", travelMode: "walking",
+  infoTab: "book", dineFilter: "all", memoFilter: "all", travelMode: "walking",
   sheet: null, editingMemo: null, lastLoad: 0, loading: false
 };
 const ui0 = ls.get(UI_KEY); if (ui0) Object.assign(S, { tab: ui0.tab || "today", infoTab: ui0.infoTab || "book", dineFilter: ui0.dineFilter || "all", travelMode: ui0.travelMode || "walking" });
@@ -96,6 +96,7 @@ function dayStops(day) {
     ds.push({ pid: key, lat: +it.lat, lng: +it.lng, name: it.pll || it.pl || it.ti, label: it.pl || it.ti, items: [it], cat: it.cat, t: it.t });
     seen.add(key);
   });
+  ds.forEach(x => { x.skip = x.items.every(i => i.st === "skipped"); x.done = !x.skip && x.items.every(i => i.st === "done" || i.st === "skipped"); });
   return ds;
 }
 function localCluster(stops) {
@@ -118,11 +119,6 @@ function gDirUrls(stops, mode) {
 const gPlaceUrl = it => it.u || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent((it.pll || it.pl || it.n || "") + (it.addr || it.a ? ", " + (it.addr || it.a) : ""))}`;
 const gNavUrl = (it, mode) => `https://www.google.com/maps/dir/?api=1&destination=${it.lat != null ? `${it.lat},${it.lng}` : encodeURIComponent((it.pll || it.pl || it.n || "") + (it.addr || it.a ? ", " + (it.addr || it.a) : ""))}&travelmode=${mode || S.travelMode}`;
 function gEmbedPlace(it) { const q = it.addr || it.a ? `${it.pll || it.pl || it.n}, ${it.addr || it.a}` : (it.lat != null ? `${it.lat},${it.lng}` : (it.pll || it.pl || it.n)); return `https://maps.google.com/maps?q=${encodeURIComponent(q)}&z=16&hl=ko&output=embed`; }
-function gEmbedRoute(stops, mode) {
-  if (stops.length < 2) return stops[0] ? `https://maps.google.com/maps?q=${ll(stops[0])}&z=15&hl=ko&output=embed` : "";
-  const flag = mode === "transit" ? "r" : mode === "driving" ? "d" : "w";
-  return `https://maps.google.com/maps?saddr=${ll(stops[0])}&daddr=${stops.slice(1).map(ll).join("+to:")}&dirflg=${flag}&hl=ko&output=embed`;
-}
 
 /* ── Supabase ── */
 let sb = null;
@@ -185,7 +181,6 @@ function setTiles() {
 }
 function mountMap() {
   const slot = $("#map-slot"); if (!slot) return;
-  if (S.mapMode === "google") { slot.innerHTML = ""; return; }
   if (!ensureMap()) { slot.innerHTML = `<div class="map-fallback">지도를 불러오지 못했습니다. 인터넷 연결을 확인해 주세요.<br>아래 ‘구글 지도로 동선 열기’는 그대로 쓸 수 있습니다.</div>`; return; }
   slot.appendChild(mapEl); setTimeout(() => { map.invalidateSize(); drawMap(); }, 0);
 }
@@ -198,11 +193,12 @@ function drawMap() {
   const stops = dayStops(day); const t = now(); const live = isLive(day);
   const color = getComputedStyle(document.documentElement).getPropertyValue("--city").trim();
   const cityColor = getComputedStyle(document.documentElement).getPropertyValue(CITY_VAR[day.city]?.slice(4, -1) || "--paris").trim() || color;
-  if (stops.length > 1) L.polyline(stops.map(s => [s.lat, s.lng]), { color: cityColor, weight: 4, opacity: .75, dashArray: "1 8", lineCap: "round" }).addTo(layer);
+  const routeStops = stops.filter(s => !s.skip);
+  if (routeStops.length > 1) L.polyline(routeStops.map(s => [s.lat, s.lng]), { color: cityColor, weight: 4, opacity: .75, dashArray: "1 8", lineCap: "round" }).addTo(layer);
   stops.forEach((s, i) => {
-    const it = s.items[0]; const isNow = live && s.items.some(x => x.s <= t && t < (x.e ?? x.s)); const isPast = live && s.items.every(x => (x.e ?? x.s) < t);
+    const it = s.items[0]; const isNow = live && s.items.some(x => x.s <= t && t < (x.e ?? x.s)); const isPast = s.done || live && s.items.every(x => (x.e ?? x.s) < t);
     const hotel = s.cat === "hotel"; const k = TYPE[it.t]?.[1] === "var(--city)" ? cityColor : getVar(TYPE[it.t]?.[1]);
-    const icon = L.divIcon({ className: "", html: `<div class="pin ${hotel ? "hotel" : ""} ${isNow ? "now" : ""} ${isPast ? "done" : ""}" style="--k:${k}">${hotel ? "숙" : i + 1}</div>`, iconSize: isNow ? [38, 38] : [30, 30], iconAnchor: isNow ? [19, 19] : [15, 15] });
+    const icon = L.divIcon({ className: "", html: `<div class="pin ${hotel ? "hotel" : ""} ${isNow ? "now" : ""} ${isPast ? "done" : ""} ${s.skip ? "skip" : ""}" style="--k:${k}">${hotel ? "숙" : i + 1}</div>`, iconSize: isNow ? [38, 38] : [30, 30], iconAnchor: isNow ? [19, 19] : [15, 15] });
     const m = L.marker([s.lat, s.lng], { icon, title: s.label, zIndexOffset: isNow ? 1000 : 0 }).addTo(layer);
     m.on("click", () => openItem(it.id));
     s.items.forEach(x => markerById[x.id] = m);
@@ -248,11 +244,9 @@ function stripHTML(day, live) {
   return h + `</div><div class="axis">${[6, 9, 12, 15, 18, 21, 24].map(x => `<span style="left:${(x - H0) / (H1 - H0) * 100}%">${x}시</span>`).join("")}</div>`;
 }
 function mapCard(day) {
-  const stops = localCluster(dayStops(day)); const urls = gDirUrls(stops, S.travelMode);
-  const gsrc = gEmbedRoute(stops, S.travelMode);
+  const stops = localCluster(dayStops(day).filter(s => !s.skip)); const urls = gDirUrls(stops, S.travelMode);
   return `<div class="mapcard">
-    ${S.mapMode === "google" && gsrc ? `<iframe class="gframe" src="${esc(gsrc)}" loading="lazy" referrerpolicy="no-referrer-when-downgrade" title="구글 지도 동선"></iframe>` : `<div id="map-slot" style="position:absolute;inset:0"></div>`}
-    <div class="map-mode" role="group" aria-label="지도 종류"><button data-mapmode="route" aria-pressed="${S.mapMode !== "google"}">동선</button><button data-mapmode="google" aria-pressed="${S.mapMode === "google"}">구글 지도</button></div>
+    <div id="map-slot" style="position:absolute;inset:0"></div>
     <div class="map-tools">${urls.length ? urls.map((u, i) => `<a class="btn primary sm" href="${esc(u)}" target="_blank" rel="noopener">${SVG.route}${urls.length > 1 ? `동선 ${i + 1}/${urls.length}` : "구글 지도로 동선 열기"}</a>`).join("") : ""}
       <span style="flex:1"></span>
       <button class="btn sm" data-travel aria-label="이동 수단 바꾸기">${S.travelMode === "walking" ? "도보" : "대중교통"}</button></div>
@@ -264,15 +258,15 @@ function timeline(day, live) {
   items.forEach(it => {
     if (!ssShown && it.s > ss) { out += sunLine(ss, day.tz); ssShown = true; }
     if (prevEnd != null && it.s - prevEnd >= 1800) out += `<div class="gap">${dur(it.s - prevEnd)} 여유</div>`;
-    const k = TYPE[it.t]?.[1] || "var(--free)"; const isNow = live && it.s <= t && t < (it.e ?? it.s); const isPast = live && (it.e ?? it.s) < t;
+    const k = TYPE[it.t]?.[1] || "var(--free)"; const isNow = live && it.s <= t && t < (it.e ?? it.s); const isPast = it.st === "done" || live && (it.e ?? it.s) < t; const isSkip = it.st === "skipped";
     const bks = (it.b || []).map(booking).filter(Boolean); const tg = itemTags(it); const mc = memosFor(it).length;
-    const tags = [pill(TYPE[it.t]?.[0] || it.t, "p-mute")].concat(bks.filter(b => b.status !== "confirmed").map(b => pill(BSTAT[b.status][0], BSTAT[b.status][1])))
+    const tags = (it.st === "done" ? [pill("완료", "p-ok")] : isSkip ? [pill("건너뜀", "p-mute")] : []).concat([pill(TYPE[it.t]?.[0] || it.t, "p-mute")]).concat(bks.filter(b => b.status !== "confirmed").map(b => pill(BSTAT[b.status][0], BSTAT[b.status][1])))
       .concat(bks.some(b => b.status === "confirmed") ? [pill("예약 확정", "p-ok")] : [])
       .concat(tg.some(x => x.k === "pick") ? [pill("소매치기 주의", "p-warn")] : []).concat(tg.some(x => x.k === "rain") ? [pill("비 올 때 대안", "p-city")] : [])
       .concat(mc ? [pill(`메모 ${mc}`, "p-city")] : []).join("");
     const endTz = it.etz || it.tz; const endTxt = it.e != null ? hm(it.e, endTz) + (ymd(it.e, endTz) !== ymd(it.s, it.tz) ? "+1" : "") : "";
     const num = numOf[it.id];
-    out += `<div class="stop ${num ? "" : "dot"} ${isNow ? "now" : ""} ${isPast ? "past" : ""}" style="--k:${k}">
+    out += `<div class="stop ${num ? "" : "dot"} ${isNow && !isSkip ? "now" : ""} ${isPast ? "past" : ""} ${isSkip ? "skip" : ""}" style="--k:${k}">
       <div class="tm"><b>${hm(it.s, it.tz)}</b><small>${endTxt}${it.etz && it.etz !== it.tz ? " 현지" : ""}</small></div>
       <div class="rail"><span class="num">${num ?? ""}</span></div>
       <div class="body"><button class="row-btn" data-item="${it.id}"><span class="tx"><b>${esc(it.ti)}</b>${it.pl && it.pl !== it.ti ? `<span>${esc(it.pl)}${it.pll ? " · " + esc(it.pll) : ""}</span>` : (it.pll ? `<span>${esc(it.pll)}</span>` : "")}<span class="tags">${tags}</span></span><span class="chev">${SVG.chev}</span></button></div></div>`;
@@ -283,6 +277,18 @@ function timeline(day, live) {
 }
 const sunLine = (ss, tz) => `<div class="sunline"><span class="tm">${hm(ss, tz)}</span><span class="rail"><i></i></span><span style="display:flex;gap:8px;align-items:center">일몰<span class="ln" style="flex:1"></span></span></div>`;
 
+/* 하루 진행 점: 지도 핀 번호와 같은 번호 */
+function dayDots(day, t) {
+  const st = dayStops(day); if (st.length < 2) return "";
+  const end = s => Math.max(...s.items.map(x => x.e ?? x.s)), start = s => Math.min(...s.items.map(x => x.s));
+  let ci = st.findIndex(s => s.items.some(x => x.s <= t && t < (x.e ?? x.s)));
+  if (ci < 0) ci = st.findIndex(s => start(s) > t);
+  const spots = st.filter(s => s.cat !== "hotel"); const curSpot = ci >= 0 ? st.slice(0, ci + 1).filter(s => s.cat !== "hotel").length : spots.length;
+  const dots = st.map((s, i) => { const past = s.done || end(s) < t && i !== ci; const cls = s.skip ? "skip" : i === ci ? "cur" : past ? "past" : "";
+    return `<i class="${cls}" title="${esc(s.label)}">${s.cat === "hotel" ? "숙" : i + 1}</i>`; }).join("<b></b>");
+  const done = spots.filter(s => s.done || end(s) < t).length;
+  return `<div class="dots-h"><span>오늘 동선 ${Math.min(curSpot, spots.length)} / ${spots.length}</span><span>${done}곳 지남</span></div><div class="dots" aria-hidden="true">${dots}</div>`;
+}
 /* ── 오늘 ── */
 function viewToday() {
   const ph = phase(), t = now(); const day = selDay(); setCity(day); const live = isLive(day);
@@ -292,9 +298,9 @@ function viewToday() {
       <div class="acts"><button class="btn sm" data-sim-open>여행 중 화면 미리보기</button></div></section>`; }
   else if (ph === "after" && !S.sim) hero = `<section class="now"><span class="lbl">여행 완료</span><h2>13일 동안 수고하셨습니다</h2></section>`;
   else {
-    const prog = cur ? Math.min(100, Math.max(0, (t - cur.s) / Math.max(1, (cur.e ?? cur.s + 1) - cur.s) * 100)) : 0;
     hero = `<section class="now"><span class="lbl">${cur ? "지금" : "다음 일정까지 여유 시간"}</span>
-      ${cur ? `<h2>${esc(cur.ti)}</h2><span class="sub">${hm(cur.s, cur.tz)}–${hm(cur.e, cur.etz || cur.tz)}${cur.pl && cur.pl !== cur.ti ? " · " + esc(cur.pl) : ""}</span><div class="bar"><i style="width:${prog}%"></i></div>` : `<h2>${nxt ? esc(nxt.ti) + " 준비" : "오늘 일정을 마쳤습니다"}</h2>`}
+      ${cur ? `<h2>${esc(cur.ti)}</h2><span class="sub">${hm(cur.s, cur.tz)}–${hm(cur.e, cur.etz || cur.tz)}${cur.pl && cur.pl !== cur.ti ? " · " + esc(cur.pl) : ""}</span>` : `<h2>${nxt ? esc(nxt.ti) + " 준비" : "오늘 일정을 마쳤습니다"}</h2>`}
+      ${dayDots(day, t)}
       ${nxt ? `<div class="next"><div class="t"><span class="sub">다음 · ${hm(nxt.s, nxt.tz)}</span><b>${esc(nxt.ti)}</b></div><div class="count"><b>${dur(nxt.s - t)}</b><span>뒤</span></div></div>
         <div class="acts">${nxt.lat != null || nxt.pl ? `<a class="btn sm" href="${esc(gNavUrl(nxt))}" target="_blank" rel="noopener">${SVG.nav}다음 장소 길찾기</a>` : ""}<button class="btn sm" data-item="${nxt.id}">자세히</button></div>` : ""}
       ${S.sim ? `<div class="acts"><button class="btn sm" data-sim-off>미리보기 끝내기</button></div>` : ""}</section>`;
@@ -305,13 +311,15 @@ function viewToday() {
     dlh = `<section class="card deadline"><svg class="ring" viewBox="0 0 58 58" aria-hidden="true"><circle class="bgc" cx="29" cy="29" r="24"/><circle class="fg" cx="29" cy="29" r="24" stroke-dasharray="${C}" stroke-dashoffset="${C * frac}"/><text x="29" y="33" text-anchor="middle">${left < 86400 ? hm(dl.s, dl.tz) : "D-" + Math.ceil(left / 86400)}</text></svg>
       <div style="flex:1;min-width:0"><div class="small muted">다음 이동 · ${mdShort(dl.day.date)}</div><b>${esc(dl.ti)}</b><div class="small">${dur(left)} 남음${dl.t === "flight" ? " · 국제선 3시간, 유럽 내선 2시간 전 도착 권장" : ""}</div></div></section>`; }
   const dayInfo = (D().info || []).filter(x => x.from && x.from <= day.date && (x.to || x.from) >= day.date);
-  const todoDue = (D().todos || []).filter(td => !td.done && td.due && td.due <= t + 3 * 86400);
+  const ref = live ? t : Math.max(t, midnight(day.date, day.tz));
+  const todoDue = (D().todos || []).filter(td => td.due && td.due <= ref + 3 * 86400 && (!td.done || td.due >= ref - 86400));
+  const checked = id => (D().checks || []).some(c => c.day === day.id && c.info === id);
   const meals = (day.dining || []).map(sl => ({ sl, p: (sl.o || []).find(o => o.status === "chosen") }));
   const dm = memosForDay(day);
   return `${hero}${dlh}
     ${mapCard(day)}
     <section class="card" style="margin:12px 16px 0">${stripHTML(day, live)}<div class="keys" style="margin-top:6px">${KEYS.map(([n, c]) => `<span style="--k:${c}">${n}</span>`).join("")}<span style="--k:var(--warn)">일몰 ${hm(daySunset(day), day.tz)}</span></div></section>
-    ${dayInfo.length || todoDue.length ? `<div class="sec-h"><h2>오늘 챙길 것</h2></div><section class="card stack" style="margin:0 16px">${dayInfo.map(x => `<div><b class="small">${esc(x.title)}</b><div class="small muted">${esc(x.body)}</div></div>`).join("")}${todoDue.map(td => `<div class="small">${pill("할 일", "p-crit")} ${esc(td.title)}</div>`).join("")}</section>` : ""}
+    ${dayInfo.length || todoDue.length ? `<div class="sec-h"><h2>오늘 챙길 것</h2></div><section class="card" style="margin:0 16px">${dayInfo.map(x => { const c = checked(x.id); return `<label class="chk ${c ? "done" : ""}"><span class="tx"><b>${esc(x.title)}</b><span>${esc(x.body)}</span></span><input type="checkbox" data-dcheck="${day.id}:${x.id}" ${c ? "checked" : ""} aria-label="${esc(x.title)} 확인"></label>`; }).join("")}${todoDue.map(td => `<label class="chk ${td.done ? "done" : ""}"><span class="tx"><b>${pill("할 일", "p-crit")} ${esc(td.title)}</b>${td.note ? `<span>${esc(td.note)}</span>` : ""}</span><input type="checkbox" data-todo="${td.id}" ${td.done ? "checked" : ""} aria-label="${esc(td.title)} 완료"></label>`).join("")}</section>` : ""}
     ${meals.length ? `<div class="sec-h"><h2>식사</h2><button class="btn ghost sm" data-goto="dine">후보 보기</button></div><section class="card stack" style="margin:0 16px">${meals.map(({ sl, p }) => `<div style="display:flex;gap:10px;align-items:center"><span class="pill p-mute">${MEAL[sl.meal]}</span><span style="flex:1;min-width:0">${p ? `<b>${esc(p.n)}</b>` : `<span class="muted">후보 ${sl.o.length}곳 중 아직 고르지 않음</span>`}</span>${p ? `<button class="btn sm" data-dine="${sl.sid}:${p.id}">보기</button>` : `<button class="btn sm" data-goto="dine">고르기</button>`}</div>`).join("")}</section>` : ""}
     <div class="sec-h"><h2>일정</h2><span>${(day.items || []).length}개${dm.length ? ` · 메모 ${dm.length}` : ""}</span></div>
     ${timeline(day, live)}`;
@@ -447,11 +455,24 @@ function openItem(id) {
   showSheet(`<h3>${esc(it.ti)}</h3><div class="sub">${mdShort(it.day.date)} ${hm(it.s, it.tz)}${it.e ? "–" + hm(it.e, it.etz || it.tz) : ""}${it.pl && it.pl !== it.ti ? " · " + esc(it.pl) : ""}</div>
     ${it.pl || it.lat != null ? `<div class="gmap"><iframe src="${esc(gEmbedPlace(it))}" loading="lazy" referrerpolicy="no-referrer-when-downgrade" title="구글 지도: ${esc(it.pl || it.ti)}"></iframe></div>
     <div class="acts"><a class="btn primary" href="${esc(gNavUrl(it))}" target="_blank" rel="noopener">${SVG.nav}길찾기</a><a class="btn" href="${esc(gPlaceUrl(it))}" target="_blank" rel="noopener">${SVG.map}구글 지도 앱</a></div>` : ""}
+    <div class="block"><div class="seg-ctl st-ctl" role="group" aria-label="일정 상태">${[["planned", "예정"], ["done", "완료"], ["skipped", "건너뜀"]].map(([k, l]) => `<button data-st="${it.id}:${k}" aria-pressed="${(it.st || "planned") === k}">${l}</button>`).join("")}</div></div>
     ${it.no ? `<div class="block"><div class="note">${esc(it.no)}</div></div>` : ""}
+    ${guideHTML(guideFor(it))}
     ${bks.length ? `<div class="block"><h4>예약</h4>${bks.map(b => `<div class="card" style="box-shadow:none;background:var(--sunk);padding:12px"><div style="display:flex;gap:8px"><b style="flex:1">${esc(b.title)}</b>${pill(BSTAT[b.status][0], BSTAT[b.status][1])}</div>${kv(b)}</div>`).join("")}</div>` : ""}
     ${tg.length ? `<div class="block"><h4>알아둘 것</h4>${tg.map(x => x.k === "pick" ? `<div class="small">사람이 많은 곳입니다. 가방은 앞으로 메고 휴대폰은 안쪽 주머니에 두세요.</div>` : x.k === "rain" ? `<div class="small"><b>비가 오면</b> ${esc(x.alt)}</div>` : `<div class="small"><b>${esc(x.x.title)}</b> <span class="muted">${esc(x.x.body)}</span></div>`).join("")}</div>` : ""}
     <div class="block"><h4>메모 ${ms.length ? ms.length + "개" : ""}</h4>${ms.map(m => `<div class="note" style="display:flex;gap:8px;align-items:flex-start"><span style="flex:1;white-space:pre-wrap">${esc(m.body)}<br><span class="small muted">${esc(who(m.author))}</span></span><button class="btn sm ghost" data-memo-edit="${m.id}">수정</button></div>`).join("")}
       <form id="quick-memo" data-qitem="${it.id}" data-dayid="${it.day.id}" style="display:flex;gap:8px"><label class="sr" for="qm">이 일정에 메모</label><input id="qm" class="field" style="flex:1;border:1px solid var(--line);border-radius:12px;padding:10px 12px;background:var(--paper)" placeholder="이 일정에 메모 남기기" maxlength="4000"><button class="btn primary" type="submit">추가</button></form></div>`);
+}
+const guideFor = it => (D().guides || {})[it.pid != null ? "p" + it.pid : ""] || (D().guides || {})["i" + it.id];
+function guideHTML(g) {
+  if (!g) return "";
+  const li = a => (a || []).map(x => `<li>${esc(x)}</li>`).join("");
+  return `<article class="guide"><span class="kicker">가이드</span><p class="lead">${esc(g.lead)}</p>
+    ${g.story ? `<p class="story">${esc(g.story)}</p>` : ""}
+    ${g.points?.length ? `<h4>꼭 볼 것</h4><ul>${li(g.points)}</ul>` : ""}
+    ${g.tips?.length ? `<h4>알아두면 좋은 것</h4><ul class="tips">${li(g.tips)}</ul>` : ""}
+    ${g.links?.length ? `<div class="links">${g.links.map(l => `<a class="btn sm" href="${esc(l.u)}" target="_blank" rel="noopener">${esc(l.t)}</a>`).join("")}</div>` : ""}
+    ${g.v ? `<p class="small muted" style="margin:6px 0 0">정리 ${esc(g.v)} · 운영시간·요금은 현장 안내 우선</p>` : ""}</article>`;
 }
 function openDine(sid, oid) {
   let sl, d; days().forEach(x => (x.dining || []).forEach(s => { if (s.sid === sid) { sl = s; d = x; } })); const o = sl?.o.find(x => x.id === oid); if (!o) return;
@@ -504,6 +525,19 @@ async function savePick(sid, oid) {
   try { await rpc("trip_dining_pick", { p_slot_id: sid, p_option_id: target }); ls.set(CACHE_KEY, S.data); toast(target ? "식당을 정했습니다" : "선택을 취소했습니다"); }
   catch (e) { sl.o.forEach((o, i) => o.status = prev[i]); render(); toast("저장하지 못했습니다. 연결을 확인해 주세요"); }
 }
+async function saveCheck(dayId, infoId, done) {
+  const D0 = D(); D0.checks = (D0.checks || []).filter(c => !(c.day === dayId && c.info === infoId));
+  if (done) D0.checks.push({ day: dayId, info: infoId }); ls.set(CACHE_KEY, S.data); render();
+  try { await rpc("trip_day_check", { p_day_id: dayId, p_info_id: infoId, p_done: done }); }
+  catch (e) { toast("저장하지 못했습니다. 연결을 확인해 주세요"); load(true); }
+}
+async function saveStatus(id, st) {
+  const it = allItems().find(x => x.id === id); if (!it || it.st === st) return; const prev = it.st || "planned";
+  const raw = days().flatMap(d => d.items || []).find(x => x.id === id); raw.st = st; ls.set(CACHE_KEY, S.data); render(); openItem(id);
+  toast(st === "done" ? "완료로 표시했습니다" : st === "skipped" ? "건너뜀으로 표시했습니다. 길찾기 동선에서 빠집니다" : "예정으로 되돌렸습니다");
+  try { await rpc("trip_item_status", { p_id: id, p_status: st }); }
+  catch (e) { raw.st = prev; ls.set(CACHE_KEY, S.data); render(); if (S.sheet?.id === id) openItem(id); toast("저장하지 못했습니다. 연결을 확인해 주세요"); }
+}
 async function saveTodo(id, done) {
   const td = D().todos.find(t => t.id === id); const prev = td.done; td.done = done; render();
   try { await rpc("trip_todo_set", { p_id: id, p_done: done }); ls.set(CACHE_KEY, S.data); } catch (e) { td.done = prev; render(); toast("저장하지 못했습니다"); }
@@ -524,20 +558,20 @@ async function removeMemo(id) {
 
 /* ── 이벤트 ── */
 document.addEventListener("click", async e => {
-  const el = e.target.closest("[data-tab],[data-day],[data-item],[data-step],[data-dinef],[data-pick],[data-dine],[data-copy],[data-goto],[data-phrase],[data-info],[data-mapmode],[data-travel],[data-memof],[data-memo-edit],[data-memo-del],[data-memo-cancel],[data-reload],[data-logout],[data-sim-open],[data-sim-off]");
+  const el = e.target.closest("[data-tab],[data-day],[data-item],[data-step],[data-dinef],[data-pick],[data-dine],[data-copy],[data-goto],[data-phrase],[data-info],[data-travel],[data-memof],[data-memo-edit],[data-memo-del],[data-memo-cancel],[data-reload],[data-logout],[data-sim-open],[data-sim-off],[data-st]");
   if (!el) return;
   const ds = el.dataset;
   if (ds.tab) { S.tab = ds.tab; closeSheet(); render(); window.scrollTo(0, 0); return; }
   if (ds.goto) { S.tab = ds.goto; if (ds.goto === "dine") S.dineFilter = "day"; render(); window.scrollTo(0, 0); return; }
   if (ds.day != null) { S.sel = +ds.day; if (S.tab === "today" && phase() === "during" && !S.sim) S.tab = "plan"; closeSheet(); render(); return; }
   if (ds.step) { S.sel = Math.min(days().length - 1, Math.max(0, S.sel + +ds.step)); render(); window.scrollTo(0, 0); return; }
+  if (ds.st) { const [i, st] = ds.st.split(":"); saveStatus(+i, st); return; }
   if (ds.item) { openItem(+ds.item); return; }
   if (ds.dinef) { S.dineFilter = ds.dinef; render(); return; }
   if (ds.dine) { const [a, b] = ds.dine.split(":").map(Number); openDine(a, b); return; }
   if (ds.pick) { const [a, b] = ds.pick.split(":").map(Number); savePick(a, b); return; }
   if (ds.info) { S.infoTab = ds.info; render(); return; }
   if (ds.memof) { S.memoFilter = ds.memof; render(); return; }
-  if (ds.mapmode) { S.mapMode = ds.mapmode; render(); return; }
   if (ds.travel != null) { S.travelMode = S.travelMode === "walking" ? "transit" : "walking"; render(); return; }
   if (ds.memoEdit) { S.editingMemo = +ds.memoEdit; S.tab = "memo"; closeSheet(); render(); window.scrollTo(0, 0); $("#memo-body")?.focus(); return; }
   if (ds.memoDel) { removeMemo(+ds.memoDel); return; }
@@ -551,6 +585,7 @@ document.addEventListener("click", async e => {
 });
 document.addEventListener("change", e => { const el = e.target;
   if (el.dataset.todo) saveTodo(+el.dataset.todo, el.checked);
+  if (el.dataset.dcheck) { const [d, i] = el.dataset.dcheck.split(":").map(Number); saveCheck(d, i, el.checked); }
   if (el.id === "memo-day") { const form = $("#memo-form"); const i = +el.value; const items = days()[i]?.items || []; $("#memo-item").innerHTML = `<option value="">날짜 전체</option>` + items.map(it => `<option value="${it.id}">${hm(it.s, it.tz)} ${esc(it.ti)}</option>`).join(""); }
 });
 document.addEventListener("submit", async e => {

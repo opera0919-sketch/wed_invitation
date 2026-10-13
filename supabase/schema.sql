@@ -125,3 +125,54 @@ alter publication supabase_realtime add table public.wed_meetings;
 alter publication supabase_realtime add table public.wed_settings;
 alter publication supabase_realtime add table public.wed_users;
 alter publication supabase_realtime add table public.wed_managers;
+
+-- ─────────────────────────────────────────────────────────────
+-- 신혼여행 앱 (trip 스키마, 비공개) — 2026-10-14 추가분
+-- trip 스키마의 나머지 테이블·RPC 는 Supabase 마이그레이션 이력 참조.
+-- ─────────────────────────────────────────────────────────────
+create table if not exists trip.guides (
+  id bigserial primary key,
+  place_id bigint unique references trip.places(id),
+  item_id bigint unique references trip.itinerary_items(id),
+  lead text not null,
+  body jsonb not null default '{}'::jsonb,   -- {story, points[], tips[], links[{t,u}]}
+  verified_on date,
+  updated_at timestamptz not null default now(),
+  check (place_id is not null or item_id is not null)
+);
+alter table trip.guides enable row level security;
+
+create table if not exists trip.day_checks (
+  day_id bigint not null references trip.days(id),
+  info_id bigint not null references trip.info_entries(id),
+  done boolean not null default true,
+  by_email text,
+  updated_at timestamptz not null default now(),
+  primary key (day_id, info_id)
+);
+alter table trip.day_checks enable row level security;
+
+create or replace function public.trip_day_check(p_day_id bigint, p_info_id bigint, p_done boolean)
+returns boolean language plpgsql security definer set search_path to '' as $$
+begin
+  if not public.wed_is_manager() then raise exception 'not_allowed' using errcode='42501'; end if;
+  insert into trip.day_checks(day_id, info_id, done, by_email, updated_at)
+  values (p_day_id, p_info_id, p_done, auth.jwt()->>'email', now())
+  on conflict (day_id, info_id) do update set done=excluded.done, by_email=excluded.by_email, updated_at=now();
+  return true;
+end $$;
+revoke all on function public.trip_day_check(bigint,bigint,boolean) from public, anon;
+grant execute on function public.trip_day_check(bigint,bigint,boolean) to authenticated;
+-- trip_app_export() 는 'guides'(키: p<place_id> / i<item_id>)와 'checks'(day, info) 를 함께 반환한다.
+
+-- 일정 상태 표시(예정/완료/건너뜀) — itinerary_items.status 갱신
+create or replace function public.trip_item_status(p_id bigint, p_status text)
+returns boolean language plpgsql security definer set search_path to '' as $$
+begin
+  if not public.wed_is_manager() then raise exception 'not_allowed' using errcode='42501'; end if;
+  if p_status not in ('planned','done','skipped') then raise exception 'bad_status' using errcode='22023'; end if;
+  update trip.itinerary_items set status=p_status, updated_at=now() where id=p_id;
+  return found;
+end $$;
+revoke all on function public.trip_item_status(bigint,text) from public, anon;
+grant execute on function public.trip_item_status(bigint,text) to authenticated;

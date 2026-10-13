@@ -47,6 +47,7 @@
 - 청첩장 앱과 별개인 정적 페이지(빌드 불필요). Vite가 `public/`을 그대로 복사하므로 `https://opera0919-sketch.github.io/wed_invitation/honeymoon/` 로 배포된다.
 - 파일: `index.html`, `app.css`, `app.js`(Leaflet·supabase-js는 CDN). 같은 Supabase 프로젝트·같은 계정(`wed_managers` 등록 이메일)으로 로그인.
 - 데이터: `trip` 스키마(비공개). 페이지는 테이블에 직접 접근하지 않고 `public.trip_*` RPC(SECURITY DEFINER, `wed_is_manager()` 확인, anon 실행 권한 없음)만 호출한다.
-  - `trip_app_export()` 전체 일정·예약·식당·메모·가이드, `trip_memo_save/remove/restore`(메모는 소프트 삭제), `trip_dining_pick`, `trip_todo_set`, `trip_place_coords`(좌표 없는 장소만, OSM Nominatim 결과 저장).
-- 지도: Leaflet + CARTO 타일(OSM 데이터). 구글 지도는 키 없는 `maps.google.com/maps?...&output=embed` iframe과 `google.com/maps/dir/?api=1` 링크(경유지 최대 8개씩 분할).
+  - `trip_app_export()` 전체 일정·예약·식당·메모·가이드·코스 가이드(`guides`)·챙길 것 체크(`checks`), `trip_memo_save/remove/restore`(메모는 소프트 삭제), `trip_dining_pick`, `trip_todo_set`, `trip_day_check`(오늘 챙길 것 체크), `trip_item_status`(일정 예정·완료·건너뜀, 건너뜀은 길찾기 동선에서 제외), `trip_place_coords`(좌표 없는 장소만, OSM Nominatim 결과 저장).
+  - 코스 가이드: `trip.guides`(장소 또는 일정 단위 짧은 아티클) → 일정 상세 시트에 표시.
+- 지도: 앱 자체 '동선' 지도 하나로 통일(Leaflet + CARTO 타일, OSM 데이터). 구글 지도는 장소 상세의 키 없는 `maps.google.com/maps?...&output=embed` iframe과 `google.com/maps/dir/?api=1` 링크(경유지 최대 8개씩 분할).
 - `embed-test.html`은 구글 지도 iframe 동작 확인용 페이지(개인정보 없음).
