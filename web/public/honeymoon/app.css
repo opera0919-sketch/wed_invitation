@@ -304,3 +304,34 @@ nav.tabs button[aria-selected="true"]{color:var(--city)}
 .pin.skip{opacity:.45;border-style:dashed;filter:grayscale(1)}
 .stop.skip{opacity:.5}.stop.skip .tx>b{text-decoration:line-through}.stop.skip .num{border-style:dashed}
 .sheet .st-ctl{margin:4px 0 0}
+/* 가이드북: 사진 갤러리 · 섹션 */
+.guide .g-gal{display:flex;gap:10px;overflow-x:auto;scroll-snap-type:x mandatory;margin:-4px -16px 14px;padding:0 16px 4px;scrollbar-width:none}
+.guide .g-gal::-webkit-scrollbar{display:none}
+.guide .g-gal figure{margin:0;flex:0 0 82%;scroll-snap-align:start;display:flex;flex-direction:column;gap:6px}
+.guide .g-gal figure:only-child{flex-basis:100%}
+.guide .g-img{display:block;padding:0;border:0;border-radius:12px;overflow:hidden;background:var(--sunk);aspect-ratio:4/3;cursor:zoom-in;width:100%}
+.guide .g-img img{width:100%;height:100%;object-fit:cover;display:block}
+.guide figcaption{font-size:12.5px;line-height:1.4;color:var(--ink2);display:flex;flex-direction:column;gap:1px}
+.guide figcaption .cr{font-size:10.5px;color:var(--mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.guide .story+.story{margin-top:8px}
+.guide .g-sec{margin-top:14px;border-top:1px solid color-mix(in srgb,var(--city) 16%,var(--line));padding-top:10px}
+.guide .g-sec summary{cursor:pointer;font-size:13px;font-weight:700;color:var(--ink2);list-style:none;display:flex;align-items:center;gap:6px;min-height:28px}
+.guide .g-sec summary::-webkit-details-marker{display:none}
+.guide .g-sec summary::after{content:"";width:7px;height:7px;border-right:2px solid currentColor;border-bottom:2px solid currentColor;transform:rotate(45deg);margin-left:auto;margin-right:4px;transition:transform .2s}
+.guide .g-sec[open] summary::after{transform:rotate(225deg)}
+.guide .g-sec>ul,.guide .g-sec>dl,.guide .g-sec>ol{margin-top:6px}
+.guide .g-look{margin:0;display:flex;flex-direction:column;gap:10px}
+.guide .g-look dt{font-weight:700;font-size:14px}
+.guide .g-look dd{margin:2px 0 0;font-size:14px;line-height:1.6;color:var(--ink)}
+.guide .g-tl{list-style:none;margin:0;padding:0 0 0 2px;display:flex;flex-direction:column}
+.guide .g-tl li{display:grid;grid-template-columns:88px minmax(0,1fr);gap:10px;padding:6px 0 6px 14px;border-left:2px solid color-mix(in srgb,var(--city) 35%,var(--line));position:relative;font-size:13.5px;line-height:1.5}
+.guide .g-tl li::before{content:"";position:absolute;left:-6px;top:12px;width:10px;height:10px;border-radius:50%;background:var(--paper);border:2px solid var(--city)}
+.guide .g-tl b{color:var(--city);font-variant-numeric:tabular-nums;font-size:13px}
+.guide .g-now,.guide .g-couple{margin-top:14px;padding:12px 14px;border-radius:12px}
+.guide .g-now{background:var(--warn-bg)}
+.guide .g-now h4{margin-top:0;color:var(--warn)}
+.guide .g-couple{background:color-mix(in srgb,#E0567A 10%,var(--paper))}
+.guide .g-couple h4{margin-top:0;color:#C2405F}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]) .guide .g-couple h4{color:#FF8FA8} }
+.g-view img{max-width:100%;max-height:62dvh;object-fit:contain;border-radius:12px;align-self:center}
+.g-view a{color:inherit}

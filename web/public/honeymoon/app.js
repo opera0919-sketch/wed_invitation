@@ -450,14 +450,14 @@ function showSheet(html) { ensureSheet(); sheet.innerHTML = `<div class="grab"><
 function closeSheet() { if (!sheet || sheet.hidden) return; scrim.classList.remove("on"); sheet.classList.remove("on"); setTimeout(() => { scrim.hidden = sheet.hidden = true; sheet.innerHTML = ""; }, 260); S.sheet = null; }
 function openItem(id) {
   const it = allItems().find(x => x.id === id); if (!it) return; S.sheet = { type: "item", id };
-  const bks = (it.b || []).map(booking).filter(Boolean); const tg = itemTags(it); const ms = memosFor(it);
+  const bks = (it.b || []).map(booking).filter(Boolean); const tg = itemTags(it); const ms = memosFor(it); S.curGuide = guideFor(it);
   if (markerById[id] && map) markerById[id].openTooltip?.();
   showSheet(`<h3>${esc(it.ti)}</h3><div class="sub">${mdShort(it.day.date)} ${hm(it.s, it.tz)}${it.e ? "–" + hm(it.e, it.etz || it.tz) : ""}${it.pl && it.pl !== it.ti ? " · " + esc(it.pl) : ""}</div>
     ${it.pl || it.lat != null ? `<div class="gmap"><iframe src="${esc(gEmbedPlace(it))}" loading="lazy" referrerpolicy="no-referrer-when-downgrade" title="구글 지도: ${esc(it.pl || it.ti)}"></iframe></div>
     <div class="acts"><a class="btn primary" href="${esc(gNavUrl(it))}" target="_blank" rel="noopener">${SVG.nav}길찾기</a><a class="btn" href="${esc(gPlaceUrl(it))}" target="_blank" rel="noopener">${SVG.map}구글 지도 앱</a></div>` : ""}
     <div class="block"><div class="seg-ctl st-ctl" role="group" aria-label="일정 상태">${[["planned", "예정"], ["done", "완료"], ["skipped", "건너뜀"]].map(([k, l]) => `<button data-st="${it.id}:${k}" aria-pressed="${(it.st || "planned") === k}">${l}</button>`).join("")}</div></div>
     ${it.no ? `<div class="block"><div class="note">${esc(it.no)}</div></div>` : ""}
-    ${guideHTML(guideFor(it))}
+    ${guideHTML(S.curGuide)}
     ${bks.length ? `<div class="block"><h4>예약</h4>${bks.map(b => `<div class="card" style="box-shadow:none;background:var(--sunk);padding:12px"><div style="display:flex;gap:8px"><b style="flex:1">${esc(b.title)}</b>${pill(BSTAT[b.status][0], BSTAT[b.status][1])}</div>${kv(b)}</div>`).join("")}</div>` : ""}
     ${tg.length ? `<div class="block"><h4>알아둘 것</h4>${tg.map(x => x.k === "pick" ? `<div class="small">사람이 많은 곳입니다. 가방은 앞으로 메고 휴대폰은 안쪽 주머니에 두세요.</div>` : x.k === "rain" ? `<div class="small"><b>비가 오면</b> ${esc(x.alt)}</div>` : `<div class="small"><b>${esc(x.x.title)}</b> <span class="muted">${esc(x.x.body)}</span></div>`).join("")}</div>` : ""}
     <div class="block"><h4>메모 ${ms.length ? ms.length + "개" : ""}</h4>${ms.map(m => `<div class="note" style="display:flex;gap:8px;align-items:flex-start"><span style="flex:1;white-space:pre-wrap">${esc(m.body)}<br><span class="small muted">${esc(who(m.author))}</span></span><button class="btn sm ghost" data-memo-edit="${m.id}">수정</button></div>`).join("")}
@@ -467,20 +467,39 @@ const guideFor = it => (D().guides || {})[it.pid != null ? "p" + it.pid : ""] ||
 function guideHTML(g) {
   if (!g) return "";
   const li = a => (a || []).map(x => `<li>${esc(x)}</li>`).join("");
-  return `<article class="guide"><span class="kicker">가이드</span><p class="lead">${esc(g.lead)}</p>
-    ${g.story ? `<p class="story">${esc(g.story)}</p>` : ""}
+  const imgs = g.images || [];
+  const gallery = imgs.length ? `<div class="g-gal" role="list">${imgs.map((m, i) => `<figure role="listitem"><button type="button" class="g-img" data-gimg="${i}" aria-label="사진 크게 보기: ${esc(m.c)}"><img src="${esc(m.u)}" alt="${esc(m.c)}" loading="lazy" decoding="async"${m.w && m.h ? ` width="${m.w}" height="${m.h}"` : ""}></button><figcaption>${esc(m.c)}<span class="cr">사진 ${esc(m.by || "Wikimedia Commons")} · ${esc(m.lic || "")}</span></figcaption></figure>`).join("")}</div>` : "";
+  const story = (g.story || "").split(/\n\s*\n/).filter(Boolean).map(p => `<p class="story">${esc(p)}</p>`).join("");
+  const sec = (k, t, body, open) => body ? `<details class="g-sec g-${k}"${open ? " open" : ""}><summary>${t}</summary>${body}</details>` : "";
+  const look = g.look?.length ? `<dl class="g-look">${g.look.map(x => `<dt>${esc(x.t)}</dt><dd>${esc(x.d)}</dd>`).join("")}</dl>` : "";
+  const tl = g.timeline?.length ? `<ol class="g-tl">${g.timeline.map(x => `<li><b>${esc(x.y)}</b><span>${esc(x.t)}</span></li>`).join("")}</ol>` : "";
+  return `<article class="guide" data-guide>${gallery}<span class="kicker">가이드북</span><p class="lead">${esc(g.lead)}</p>
+    ${story}
     ${g.points?.length ? `<h4>꼭 볼 것</h4><ul>${li(g.points)}</ul>` : ""}
+    ${sec("look", "놓치기 쉬운 디테일", look, true)}
+    ${sec("hidden", "알고 보면 더 재미있는 이야기", g.hidden?.length ? `<ul>${li(g.hidden)}</ul>` : "", true)}
+    ${sec("tl", "연표", tl, false)}
+    ${g.now?.length ? `<div class="g-now"><h4>요즘 이야기</h4><ul>${li(g.now)}</ul></div>` : ""}
+    ${g.couple?.length ? `<div class="g-couple"><h4>두 사람을 위한 팁</h4><ul>${li(g.couple)}</ul></div>` : ""}
     ${g.tips?.length ? `<h4>알아두면 좋은 것</h4><ul class="tips">${li(g.tips)}</ul>` : ""}
     ${g.links?.length ? `<div class="links">${g.links.map(l => `<a class="btn sm" href="${esc(l.u)}" target="_blank" rel="noopener">${esc(l.t)}</a>`).join("")}</div>` : ""}
-    ${g.v ? `<p class="small muted" style="margin:6px 0 0">정리 ${esc(g.v)} · 운영시간·요금은 현장 안내 우선</p>` : ""}</article>`;
+    ${g.v ? `<p class="small muted" style="margin:10px 0 0">정리 ${esc(g.v)} · 운영시간·요금은 현장 안내 우선${imgs.length ? " · 사진: 위키미디어 공용(사진을 누르면 출처)" : ""}</p>` : ""}</article>`;
+}
+function openGuideImg(g, i) {
+  const m = g?.images?.[i]; if (!m) return;
+  const o = document.createElement("div"); o.className = "overlay g-view"; o.setAttribute("role", "dialog"); o.setAttribute("aria-label", m.c);
+  o.innerHTML = `<img src="${esc(m.u)}" alt="${esc(m.c)}"><div class="alt">${esc(m.c)}</div><div class="small" style="color:var(--mute)">사진 ${esc(m.by || "")} · ${esc(m.lic || "")} · <a href="${esc(m.src)}" target="_blank" rel="noopener">원본·라이선스</a></div><button class="btn primary" style="align-self:flex-start">닫기</button>`;
+  o.onclick = ev => { if (!ev.target.closest("a")) o.remove(); }; document.body.appendChild(o);
 }
 function openDine(sid, oid) {
   let sl, d; days().forEach(x => (x.dining || []).forEach(s => { if (s.sid === sid) { sl = s; d = x; } })); const o = sl?.o.find(x => x.id === oid); if (!o) return;
+  S.curGuide = o.pid != null ? (D().guides || {})["p" + o.pid] : null;
   showSheet(`<h3>${esc(o.n)}</h3><div class="sub">Day ${d.n} ${MEAL[sl.meal]} · ${esc(o.a || "")}</div>
     <div class="gmap"><iframe src="${esc(gEmbedPlace(o))}" loading="lazy" referrerpolicy="no-referrer-when-downgrade" title="구글 지도: ${esc(o.n)}"></iframe></div>
     <div class="acts"><a class="btn primary" href="${esc(gNavUrl(o))}" target="_blank" rel="noopener">${SVG.nav}길찾기</a><a class="btn" href="${esc(gPlaceUrl(o))}" target="_blank" rel="noopener">${SVG.map}구글 지도 앱</a></div>
     <div class="block"><div style="display:flex;gap:6px;flex-wrap:wrap">${pill(RES[o.r][0], RES[o.r][1])}${o.status === "chosen" ? pill("이 끼니로 선택됨", "p-city") : ""}</div><div class="small">${esc(o.h)}</div><div class="small muted">${esc(o.no)}</div>
-      <button class="btn ${o.status === "chosen" ? "" : "primary"} block" data-pick="${sl.sid}:${o.id}">${o.status === "chosen" ? "선택 취소" : "이 식당으로 정하기"}</button></div>`);
+      <button class="btn ${o.status === "chosen" ? "" : "primary"} block" data-pick="${sl.sid}:${o.id}">${o.status === "chosen" ? "선택 취소" : "이 식당으로 정하기"}</button></div>
+    ${guideHTML(S.curGuide)}`);
 }
 
 /* ── 렌더 ── */
@@ -558,7 +577,7 @@ async function removeMemo(id) {
 
 /* ── 이벤트 ── */
 document.addEventListener("click", async e => {
-  const el = e.target.closest("[data-tab],[data-day],[data-item],[data-step],[data-dinef],[data-pick],[data-dine],[data-copy],[data-goto],[data-phrase],[data-info],[data-travel],[data-memof],[data-memo-edit],[data-memo-del],[data-memo-cancel],[data-reload],[data-logout],[data-sim-open],[data-sim-off],[data-st]");
+  const el = e.target.closest("[data-tab],[data-day],[data-item],[data-step],[data-dinef],[data-pick],[data-dine],[data-copy],[data-goto],[data-phrase],[data-info],[data-travel],[data-memof],[data-memo-edit],[data-memo-del],[data-memo-cancel],[data-reload],[data-logout],[data-sim-open],[data-sim-off],[data-st],[data-gimg]");
   if (!el) return;
   const ds = el.dataset;
   if (ds.tab) { S.tab = ds.tab; closeSheet(); render(); window.scrollTo(0, 0); return; }
@@ -566,6 +585,7 @@ document.addEventListener("click", async e => {
   if (ds.day != null) { S.sel = +ds.day; if (S.tab === "today" && phase() === "during" && !S.sim) S.tab = "plan"; closeSheet(); render(); return; }
   if (ds.step) { S.sel = Math.min(days().length - 1, Math.max(0, S.sel + +ds.step)); render(); window.scrollTo(0, 0); return; }
   if (ds.st) { const [i, st] = ds.st.split(":"); saveStatus(+i, st); return; }
+  if (ds.gimg != null) { openGuideImg(S.curGuide, +ds.gimg); return; }
   if (ds.item) { openItem(+ds.item); return; }
   if (ds.dinef) { S.dineFilter = ds.dinef; render(); return; }
   if (ds.dine) { const [a, b] = ds.dine.split(":").map(Number); openDine(a, b); return; }
